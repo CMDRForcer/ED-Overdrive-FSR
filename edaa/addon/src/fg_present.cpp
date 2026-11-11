@@ -827,6 +827,7 @@ namespace edaa
 
 
         std::atomic<bool> ffx_debug_view{ false }; // fg_amd_debug_view
+        std::atomic<bool> ffx_only_generated{ false }; // fg_amd_only_generated
 
         ffxReturnCode_t ffx_generate(ffxDispatchDescFrameGeneration* params, void* user)
         {
@@ -844,6 +845,7 @@ namespace edaa
             c.frameGenerationCallbackUserContext = on ? &p.ffx_fg_ctx : nullptr;
             c.frameGenerationEnabled = on;
             c.flags = ffx_debug_view.load(std::memory_order_relaxed) ? FFX_FRAMEGENERATION_FLAG_DRAW_DEBUG_VIEW : 0u;
+            c.onlyPresentGenerated = on && ffx_only_generated.load(std::memory_order_relaxed); // diagnosis: AMD's frames alone
             c.allowAsyncWorkloads = false;
             c.generationRect = { 0, 0, static_cast<int32_t>(p.width), static_cast<int32_t>(p.height) };
             c.frameID = p.ffx_frame_id;
@@ -1702,6 +1704,7 @@ namespace edaa
                 ship_still = s.config.fg_amd_ship_still;
 #if EDAA_FSR
                 ffx_debug_view = s.config.fg_amd_debug_view;
+                ffx_only_generated = s.config.fg_amd_only_generated;
 #endif
             }
 
