@@ -12,7 +12,8 @@ cbuffer motion_constants : register(b0)
     float4 debug; // x: mode (1 motion, 2 mask, 3 depth, 4 history rejection, 5 objects, 6 temporal change, 7 HUD mask, 8 reactive mask), y: pixels for full colour,
                   // z: vehicle mask source (0 stencil bits, 1 distance), w: stencil bits of the player's vehicle
     float4 vehicle[3]; // rows of the vehicle motion: current -> previous camera-relative position (3x4)
-    float4 vehicle_on; // x: 1 when the vehicle motion is known, else vehicle pixels get no motion
+    float4 vehicle_on; // x: 1 when the vehicle motion is known, else vehicle pixels get no motion,
+                       // y: AMD frame generation ship distance (m, 0 = off; fg_amd_ship_distance)
 };
 
 // Moving objects debug view (object_motion.cpp), up to 128 markers.
@@ -41,7 +42,7 @@ void vs_fullscreen(uint id : SV_VertexID, out float4 pos : SV_Position, out floa
 struct motion_output
 {
     float2 motion : SV_Target0; // previous UV - current UV, jitter removed
-    float mask : SV_Target1; // 1 = vehicle-attached pixel
+    float mask : SV_Target1; // 1 = vehicle-attached pixel, 0.4 = only for AMD frame generation (closer than vehicle_on.y)
 };
 
 
@@ -86,6 +87,13 @@ motion_output ps_motion(float4 pos : SV_Position)
         o.mask = (depth > 0 && params.z / depth < params.w) ? 1 : 0;
     }
 
+    // AMD frame generation: the outer hull and nose of the player's ship carry no
+    // stencil bit. Closer than vehicle_on.y metres counts as the ship for AMD only
+    // (0.4: below the 0.5 threshold of TAA and the vehicle motion below).
+    if (o.mask == 0 && vehicle_on.y > 0 && depth > 0 && params.z / depth < vehicle_on.y) {
+        o.mask = 0.4;
+    }
+
     // Same world point relative to the previous camera position.
     const float4 prev_clip = mul(float4(h.xyz + camera_delta.xyz * h.w, h.w), prev_view_proj);
     float2 motion = 0;
@@ -97,7 +105,7 @@ motion_output ps_motion(float4 pos : SV_Position)
 
     // Vehicle pixels: the vehicle's own motion (head movements included), or
     // none when it is unknown (they mostly move with the camera).
-    if (o.mask > 0) {
+    if (o.mask > 0.5) {
         motion = 0;
 
         if (vehicle_on.x > 0 && h.w > 0) {

@@ -541,6 +541,12 @@ namespace edaa
                 edit(ImGui::Checkbox("AMD: cockpit HUD from the newest real frame (no double HUD)", &s.config.fg_amd_hud_ui));
                 edit(ImGui::Checkbox("AMD: own ship from the newest real frame (no flicker on the hull)", &s.config.fg_amd_ship_ui));
                 edit(ImGui::Checkbox("AMD: own ship without motion (no hull flicker, no panel ghosts)", &s.config.fg_amd_ship_still));
+
+                if (s.config.fg_amd_ship_ui || s.config.fg_amd_ship_still) {
+                    edit(ImGui::SliderFloat("AMD: own ship up to (m, 0 = cockpit only)", &s.config.fg_amd_ship_distance, 0.0f, 150.0f, "%.0f"));
+                    ImGui::TextDisabled("Outer hull and nose: about the visible ship length. Closer terrain stands still for AMD too.");
+                }
+
                 edit(ImGui::Checkbox("AMD: debug view in generated frames (diagnosis)", &s.config.fg_amd_debug_view));
                 ImGui::Checkbox("AMD: only generated frames (diagnosis, half frame rate, not saved)", &s.config.fg_amd_only_generated);
 

@@ -395,7 +395,7 @@ float ps_reactive(float4 pos : SV_Position) : SV_Target
 float2 ps_fg_motion(float4 pos : SV_Position) : SV_Target
 {
     const int3 p = int3(pos.xy, 0);
-    return hud_mask_tex.Load(p) > 0.5 || vehicle_mask_tex.Load(p) > 0.5 ? float2(0, 0) : motion_tex.Load(p);
+    return hud_mask_tex.Load(p) > 0.5 || vehicle_mask_tex.Load(p) > 0.25 ? float2(0, 0) : motion_tex.Load(p);
 }
 
 
@@ -403,7 +403,7 @@ float2 ps_fg_motion(float4 pos : SV_Position) : SV_Target
 float2 ps_fg_motion_keep(float4 pos : SV_Position) : SV_Target
 {
     const int3 p = int3(pos.xy, 0);
-    return vehicle_mask_tex.Load(p) > 0.5 ? float2(0, 0) : motion_tex.Load(p);
+    return vehicle_mask_tex.Load(p) > 0.25 ? float2(0, 0) : motion_tex.Load(p); // 0.4: AMD ship distance
 }
 
 
@@ -432,7 +432,7 @@ float4 ps_fg_hud_ui(float4 pos : SV_Position) : SV_Target
 
     [unroll] for (int v = -2; v <= 2; ++v) {
         [unroll] for (int u = -2; u <= 2; ++u) {
-            hud = max(hud, vehicle_mask_tex.Load(int3(m + int2(u, v), 0)));
+            hud = max(hud, vehicle_mask_tex.Load(int3(m + int2(u, v), 0)) > 0.25 ? 1.0 : 0.0); // 0.4: AMD ship distance
         }
     }
     // clang-format on

@@ -54,7 +54,7 @@ namespace edaa
             float render_size[4];
             float debug[4]; // mode, pixels for full colour
             float vehicle[3][4]; // vehicle motion: current -> previous camera-relative position
-            float vehicle_on[4]; // x: vehicle motion known
+            float vehicle_on[4]; // x: vehicle motion known, y: AMD frame generation ship distance (m)
         };
 
         struct alignas(16) object_constants
@@ -920,6 +920,7 @@ namespace edaa
             mc.debug[3] = static_cast<float>(in.config.mask_stencil_bits);
             std::memcpy(mc.vehicle, in.vehicle, sizeof(mc.vehicle));
             mc.vehicle_on[0] = in.vehicle_known ? 1.0f : 0.0f;
+            mc.vehicle_on[1] = in.config.fg_backend == 1 && (in.config.fg_amd_ship_still || in.config.fg_amd_ship_ui) ? in.config.fg_amd_ship_distance : 0.0f;
 
             const std::lock_guard<std::mutex> lock(gpu_mutex);
 
@@ -1385,6 +1386,10 @@ namespace edaa
 
             if (s.on_foot && s.config.mask_auto_off_on_foot && s.config.mask_source == 1) {
                 in.config.mask_distance = 0.0f; // no vehicle: everything uses camera motion
+            }
+
+            if (s.on_foot) {
+                in.config.fg_amd_ship_distance = 0.0f; // no ship around the camera
             }
 
             const upscale_failure& f = upscale_failed;
