@@ -90,6 +90,8 @@ namespace edaa
         float taa_clip_gamma_static = 5.0f; // clip box for still pixels (larger = less flicker)
         bool map_detect_no_shadows = true; // also treat frames without sun shadow pass as a map
         bool taa_before_hud = true; // resolve before the HUD pass: HUD/holograms not anti-aliased, no ghosting
+        bool aa_ship_steady = false; // anti-aliasing: the player's own ship (automatic detection, aa_ship_distance) moves with the camera, not with the world
+        float aa_ship_distance = 0.0f; // aa_ship_steady: closer than this (m) counts as the own ship too, 0 = only the automatic detection
         bool hud_motion = false; // upscaling: the cockpit HUD (HUD mask) gets the vehicle's motion vectors, not the world's behind it
         bool hud_learn = false; // find the cockpit HUD shader by the HUD panel textures it reads (shader replaced, e.g. EDHM)
         bool taa_soft_offscreen = true; // reuse the edge of the history for pixels entering the screen

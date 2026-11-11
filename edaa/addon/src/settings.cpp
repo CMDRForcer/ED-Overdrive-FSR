@@ -43,6 +43,8 @@ namespace edaa
             EDAA_FIELD(taa_before_hud, boolean),
             EDAA_FIELD(hud_learn, boolean),
             EDAA_FIELD(hud_motion, boolean),
+            EDAA_FIELD(aa_ship_steady, boolean),
+            EDAA_FIELD(aa_ship_distance, real),
             EDAA_FIELD(map_detect_no_shadows, boolean),
             EDAA_FIELD(motion_enabled, boolean),
             EDAA_FIELD(mask_source, integer),

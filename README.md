@@ -16,7 +16,7 @@ Herstellers läuft** (Einzelheiten: [`edaa/docs/vendors.md`](edaa/docs/vendors.m
 
 | | NVIDIA | AMD |
 |---|---|---|
-| Datei | `ED-Overdrive-FSR.exe` (öffentlich später `ED-Overdrive-NVIDIA.exe`) | `ED-Overdrive-AMD.exe` |
+| Datei | `ED-Overdrive-NVIDIA.exe` | `ED-Overdrive-AMD.exe` |
 | Farben | Schwarz mit NVIDIA-Grün | Schwarz mit AMD-Rot |
 | Kantenglättung | NVIDIA DLAA, AMD FSR, Intel XeSS, EDAA TAA | AMD FSR, Intel XeSS, EDAA TAA |
 | Frame Generation | NVIDIA DLSS-G (RTX 40/50, mit Reflex) oder AMD FSR FG | AMD FSR FG (mit EDAAs Bildlimit) |
@@ -138,7 +138,7 @@ cd ED-Overdrive-FSR
 | Add-on | `cmake -S edaa -B edaa/build -G "Visual Studio 17 2022" -A x64` | `cmake -S edaa -B edaa/build-amd -G "Visual Studio 17 2022" -A x64 -DEDAA_VENDOR=amd` |
 | | `cmake --build edaa/build --config Release` | `cmake --build edaa/build-amd --config Release` |
 | App | `dotnet publish app/GenFrame.Setup.csproj -p:PublishProfile=Release` | `dotnet publish app/GenFrame.Setup.csproj -p:PublishProfile=Release -p:Vendor=amd` |
-| Ergebnis | `app/bin/publish/ED-Overdrive-FSR.exe` | `app/bin/publish/ED-Overdrive-AMD.exe` |
+| Ergebnis | `app/bin/publish/ED-Overdrive-NVIDIA.exe` | `app/bin/publish/ED-Overdrive-AMD.exe` |
 
 - AMD FSR kommt aus dem Submodul `edaa/third_party/fidelityfx` (FidelityFX SDK 2.4.0).
 - Nur NVIDIA: für DLSS-G vorher das [Streamline SDK 2.14.16](https://github.com/NVIDIA-RTX/Streamline/releases/tag/v2.14.16)
