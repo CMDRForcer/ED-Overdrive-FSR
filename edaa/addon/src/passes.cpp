@@ -93,7 +93,7 @@ namespace edaa
         {
             ID3D11Device* device = nullptr; // not owned
             ComPtr<ID3D11VertexShader> vs;
-            ComPtr<ID3D11PixelShader> ps_motion, ps_debug, ps_taa, ps_copy, ps_hud_mask, ps_taau, ps_sharpen, ps_fg_motion, ps_hud_motion, ps_fg_motion_keep, ps_reactive, ps_fg_hud_ui;
+            ComPtr<ID3D11PixelShader> ps_motion, ps_debug, ps_taa, ps_copy, ps_hud_mask, ps_taau, ps_sharpen, ps_fg_motion, ps_hud_motion, ps_fg_motion_keep, ps_reactive, ps_fg_hud_ui, ps_ship_auto;
             ComPtr<ID3D11Buffer> motion_cb, taa_cb, object_cb;
             ComPtr<ID3D11SamplerState> linear_clamp;
             ComPtr<ID3D11BlendState> max_blend; // HUD mask accumulation
@@ -111,6 +111,9 @@ namespace edaa
             target reactive_snapshot; // scene right before the first transparent draw
             target reactive; // R8 reactive mask (ps_reactive)
             target dlss_mask; // R8 max(HUD mask, reactive mask) given to DLSS / XeSS
+            target ship_score[2], ship_depth[2]; // automatic ship detection (ps_ship_auto): [ship_index] = this frame
+            int ship_index = 0;
+            bool ship_valid = false; // [ship_index] holds a score
             DXGI_FORMAT color_format = DXGI_FORMAT_UNKNOWN; // typed format of the game's scene target
             target upscale_output; // upscaling: display-size UAV output, drawn into the game's target
             target taau_history[2]; // EDAA TAA upscaling: display-size history
@@ -244,6 +247,7 @@ namespace edaa
                 SUCCEEDED(device->CreatePixelShader(g_ps_hud_motion, sizeof(g_ps_hud_motion), nullptr, &gpu.ps_hud_motion)) &&
                 SUCCEEDED(device->CreatePixelShader(g_ps_reactive, sizeof(g_ps_reactive), nullptr, &gpu.ps_reactive)) &&
                 SUCCEEDED(device->CreatePixelShader(g_ps_fg_hud_ui, sizeof(g_ps_fg_hud_ui), nullptr, &gpu.ps_fg_hud_ui)) &&
+                SUCCEEDED(device->CreatePixelShader(g_ps_ship_auto, sizeof(g_ps_ship_auto), nullptr, &gpu.ps_ship_auto)) &&
                 SUCCEEDED(device->CreateSamplerState(&sampler, &gpu.linear_clamp)) &&
                 SUCCEEDED(device->CreateBlendState(&max_blend, &gpu.max_blend)) &&
                 create_buffer(sizeof(motion_constants), gpu.motion_cb) &&
@@ -306,6 +310,13 @@ namespace edaa
             gpu.reactive_snapshot = {};
             gpu.reactive = {};
             gpu.dlss_mask = {};
+
+            for (int i = 0; i < 2; ++i) {
+                gpu.ship_score[i] = {};
+                gpu.ship_depth[i] = {};
+            }
+
+            gpu.ship_valid = false;
             gpu.upscaler_last = -1;
             return create_target(DXGI_FORMAT_R16G16_FLOAT, gpu.motion) &&
                 create_target(DXGI_FORMAT_R8_UNORM, gpu.mask) &&
@@ -972,6 +983,40 @@ namespace edaa
                 ctx->Draw(3, 0);
             }
 
+            // Automatic ship detection (diagnosis view for now).
+            if (in.config.debug == static_cast<int>(debug_view::ship_auto) && gpu.ps_ship_auto) {
+                bool ready = true;
+
+                for (int i = 0; i < 2 && ready; ++i) {
+                    ready = (gpu.ship_score[i].tex || create_target(DXGI_FORMAT_R16_FLOAT, gpu.ship_score[i])) &&
+                        (gpu.ship_depth[i].tex || create_target(DXGI_FORMAT_R32_FLOAT, gpu.ship_depth[i]));
+                }
+
+                if (ready) {
+                    const int last = gpu.ship_index;
+                    const int next = 1 - last;
+
+                    if (!gpu.ship_valid) {
+                        const float zero[4] = {};
+                        ctx->ClearRenderTargetView(gpu.ship_score[last].rtv.Get(), zero);
+                        ctx->ClearRenderTargetView(gpu.ship_depth[last].rtv.Get(), zero);
+                    }
+
+                    bind_srvs(ctx, {});
+                    ID3D11RenderTargetView* const ship_targets[] = { gpu.ship_score[next].rtv.Get(), gpu.ship_depth[next].rtv.Get() };
+                    ctx->OMSetRenderTargets(2, ship_targets, nullptr);
+                    bind_srvs(ctx, { gpu.depth.srv.Get(), nullptr, gpu.ship_score[last].srv.Get(), nullptr, nullptr, gpu.ship_depth[last].srv.Get() });
+                    ctx->PSSetShader(gpu.ps_ship_auto.Get(), nullptr, 0);
+                    ctx->Draw(3, 0);
+                    bind_srvs(ctx, {});
+                    gpu.ship_index = next;
+                    gpu.ship_valid = true;
+                }
+            }
+            else {
+                gpu.ship_valid = false;
+            }
+
             // Reactive mask: what the transparents changed since the snapshot.
             reactive_ready = false;
 
@@ -1165,10 +1210,14 @@ namespace edaa
             set_viewport(ctx, static_cast<float>(desc.Width), static_cast<float>(desc.Height));
             ID3D11Buffer* const cb[] = { gpu.motion_cb.Get(), gpu.object_cb.Get() };
             ctx->PSSetConstantBuffers(0, 2, cb);
+            const bool ship_auto = config.debug == static_cast<int>(debug_view::ship_auto);
             ID3D11ShaderResourceView* const mask = config.debug == static_cast<int>(debug_view::hud_mask) ? gpu.hud_mask.srv.Get()
                 : config.debug == static_cast<int>(debug_view::reactive)                                ? gpu.reactive.srv.Get()
+                : ship_auto                                                                              ? (gpu.ship_valid ? gpu.ship_score[gpu.ship_index].srv.Get() : nullptr)
                                                                                                          : gpu.mask.srv.Get();
-            bind_srvs(ctx, { gpu.depth.srv.Get(), gpu.motion.srv.Get(), mask, gpu.history[gpu.history_index].srv.Get(), nullptr, gpu.history[1 - gpu.history_index].srv.Get() });
+            // Ship auto: t3 = the vehicle mask (stencil) to compare.
+            bind_srvs(ctx, { gpu.depth.srv.Get(), gpu.motion.srv.Get(), mask, ship_auto ? gpu.mask.srv.Get() : gpu.history[gpu.history_index].srv.Get(), nullptr,
+                gpu.history[1 - gpu.history_index].srv.Get() });
             ctx->PSSetShader(gpu.ps_debug.Get(), nullptr, 0);
             ctx->Draw(3, 0);
         }

@@ -23,6 +23,7 @@ namespace edaa
         temporal_change = 6, // how much the TAA output changed since the last frame (flicker finder, camera still)
         hud_mask = 7, // upscaling: where the cockpit HUD was found (DLSS uses the current frame there)
         reactive = 8, // DLSS/XeSS reactive mask: where transparents changed the scene (particles, glass, glows)
+        ship_auto = 9, // automatic own-ship detection (moves with the camera), compared with the game stencil
     };
 
     // Which resolve replaces the game's anti-aliasing.

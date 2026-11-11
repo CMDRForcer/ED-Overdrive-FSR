@@ -95,7 +95,7 @@ namespace edaa
 
             if (runtime->is_key_pressed('M')) {
                 const std::lock_guard<std::recursive_mutex> lock(s.mutex);
-                s.config.debug = (s.config.debug + 1) % (static_cast<int>(debug_view::reactive) + 1);
+                s.config.debug = (s.config.debug + 1) % (static_cast<int>(debug_view::ship_auto) + 1);
             }
 #endif
         }

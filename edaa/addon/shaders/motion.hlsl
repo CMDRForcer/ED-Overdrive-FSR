@@ -9,7 +9,7 @@ cbuffer motion_constants : register(b0)
     float4 camera_delta; // xyz: current camera position - previous (c275)
     float4 params; // xy: jitter in UV, z: near plane, w: vehicle mask distance (m)
     float4 render_size; // w, h, 1/w, 1/h
-    float4 debug; // x: mode (1 motion, 2 mask, 3 depth, 4 history rejection, 5 objects, 6 temporal change, 7 HUD mask, 8 reactive mask), y: pixels for full colour,
+    float4 debug; // x: mode (1 motion, 2 mask, 3 depth, 4 history rejection, 5 objects, 6 temporal change, 7 HUD mask, 8 reactive mask, 9 ship auto), y: pixels for full colour,
                   // z: vehicle mask source (0 stencil bits, 1 distance), w: stencil bits of the player's vehicle
     float4 vehicle[3]; // rows of the vehicle motion: current -> previous camera-relative position (3x4)
     float4 vehicle_on; // x: 1 when the vehicle motion is known, else vehicle pixels get no motion,
@@ -124,6 +124,111 @@ motion_output ps_motion(float4 pos : SV_Position)
 }
 
 
+// Automatic ship detection (diagnosis, debug view "Ship auto"). The player's own
+// ship moves with the camera, the world does not. Each pixel is reprojected both
+// ways into the last frame (world: camera motion; ship: the vehicle motion, or no
+// motion when it is unknown) and the depth found there is compared with the depth
+// each prediction expects. Only a clear answer (one fits, the other does not)
+// moves the score; otherwise (camera still, flat ground in level flight) it keeps
+// the last value. Inputs: t0 depth, t2 last score, t5.x last depth (R32_FLOAT).
+struct ship_auto_output
+{
+    float score : SV_Target0; // 1 = moves with the camera (own ship)
+    float depth : SV_Target1; // this frame's depth, for the next frame
+};
+
+// Relative depth error of the best match around the predicted position (3x3
+// pixels): |expected / found - 1|, large when off screen or sky.
+float ship_auto_error(float4 prev_clip, out float2 prev_uv)
+{
+    prev_uv = float2(-1, -1);
+
+    if (prev_clip.w <= 0) {
+        return 1e9;
+    }
+
+    const float3 ndc = prev_clip.xyz / prev_clip.w;
+    prev_uv = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+
+    if (any(prev_uv < 0) || any(prev_uv > 1) || ndc.z <= 0) {
+        return 1e9;
+    }
+
+    const int2 c = int2(prev_uv * render_size.xy);
+    float best = 1e9;
+
+    // clang-format off
+    [unroll] for (int y = -1; y <= 1; ++y) {
+        [unroll] for (int x = -1; x <= 1; ++x) {
+            const int3 q = int3(clamp(c + int2(x, y), int2(0, 0), int2(render_size.xy) - 1), 0);
+            const float found = prev_history_tex.Load(q).x;
+
+            if (found > 0) {
+                best = min(best, abs(ndc.z / found - 1));
+            }
+        }
+    }
+    // clang-format on
+
+    return best;
+}
+
+ship_auto_output ps_ship_auto(float4 pos : SV_Position)
+{
+    const int3 p = int3(pos.xy, 0);
+    const float depth = scene_depth.Load(p);
+    const float last = mask_tex.Load(p);
+    ship_auto_output o;
+    o.depth = depth;
+    o.score = last;
+
+    if (depth <= 0) {
+        o.score = 0; // sky
+        return o;
+    }
+
+    const float2 uv = pos.xy * render_size.zw - params.xy;
+    const float2 ndc = float2(uv.x * 2 - 1, 1 - uv.y * 2);
+    const float4 h = mul(float4(ndc, depth, 1), inv_view_proj);
+
+    if (h.w <= 0) {
+        return o;
+    }
+
+    float2 world_uv, ship_uv;
+    const float world_error = ship_auto_error(mul(float4(h.xyz + camera_delta.xyz * h.w, h.w), prev_view_proj), world_uv);
+    float ship_error;
+
+    if (vehicle_on.x > 0) {
+        const float4 v = float4(h.xyz / h.w, 1);
+        ship_error = ship_auto_error(mul(float4(dot(vehicle[0], v), dot(vehicle[1], v), dot(vehicle[2], v), 1), prev_view_proj), ship_uv);
+    }
+    else {
+        // Unknown vehicle motion: the ship stands still on screen.
+        ship_uv = uv;
+        const float found = prev_history_tex.Load(p).x;
+        ship_error = found > 0 ? abs(depth / found - 1) : 1e9;
+    }
+
+    // Both predictions (nearly) the same: no information.
+    if (length((world_uv - ship_uv) * render_size.xy) < 2) {
+        return o;
+    }
+
+    const float tolerance = 0.02; // 2 % of the depth
+    const float rate = 0.08;
+
+    if (ship_error < tolerance && world_error > 4 * tolerance) {
+        o.score = lerp(last, 1, rate);
+    }
+    else if (world_error < tolerance && ship_error > 4 * tolerance) {
+        o.score = lerp(last, 0, rate);
+    }
+
+    return o;
+}
+
+
 // Cockpit HUD panels (hud_mask on t2, render size): they hang in the cockpit but
 // write no depth, so ps_motion gave them the motion of the world behind. Here they
 // get the vehicle's motion at about 1.5 m (head turns: the distance hardly matters).
@@ -166,6 +271,19 @@ float4 ps_debug(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
         // 2: vehicle mask (orange), 7: HUD mask of the upscaling (cyan), both bound to t2.
         const float mask = mask_tex.Load(int3(px, 0));
         return float4(lerp(depth_shade.xxx * 0.5, debug.x == 2 ? float3(1, 0.3, 0.1) : debug.x == 8 ? float3(1, 0.85, 0.1) : float3(0.1, 0.9, 1), mask), 1);
+    }
+
+    if (debug.x == 9) {
+        // Ship auto: green = detected as own ship (t2 score), orange = game stencil
+        // only, yellow = both, grey = world (t3.r: vehicle mask).
+        const float score = mask_tex.Load(int3(px, 0));
+        const bool stencil = history_tex.Load(int3(px, 0)).r > 0.5;
+
+        if (stencil) {
+            return float4(score > 0.5 ? float3(1, 0.9, 0.1) : float3(1, 0.3, 0.1), 1);
+        }
+
+        return float4(lerp(depth_shade.xxx * 0.5, float3(0.1, 1, 0.2), score), 1);
     }
 
     if (debug.x == 5) {

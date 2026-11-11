@@ -445,7 +445,7 @@ namespace edaa
             ImGui::Separator();
             ImGui::TextUnformatted("Debug views (Ctrl+Shift+M)");
             edit(ImGui::Checkbox("Generate motion vectors", &s.config.motion_enabled));
-            ImGui::Combo("Debug view", &s.config.debug, "Off\0Motion vectors\0Vehicle mask\0Depth\0History rejection\0Moving objects\0Temporal change (flicker)\0HUD mask (upscaling)\0Reactive mask (DLSS)\0");
+            ImGui::Combo("Debug view", &s.config.debug, "Off\0Motion vectors\0Vehicle mask\0Depth\0History rejection\0Moving objects\0Temporal change (flicker)\0HUD mask (upscaling)\0Reactive mask (DLSS)\0Ship auto (green: detected, orange: stencil only)\0");
             edit(ImGui::SliderFloat("Colour saturation (px)", &s.config.debug_motion_pixels, 1.0f, 64.0f, "%.0f"));
 
             ImGui::Separator();
