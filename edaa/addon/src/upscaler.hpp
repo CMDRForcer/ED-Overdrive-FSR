@@ -1,4 +1,4 @@
-// Inputs shared by the neural backends (NVIDIA DLSS, Intel XeSS): at native
+// Inputs shared by the neural backends (NVIDIA DLSS, Intel XeSS, AMD FSR): at native
 // resolution instead of the EDAA TAA resolve (anti-aliasing), or at the end of
 // the frame in place of the game's final upscale (upscaling).
 
@@ -24,6 +24,9 @@ namespace edaa
         bool reset = false; // camera cut: drop the history
         bool hdr = true; // false: tonemapped image (upscaling at the end of the frame)
         int dlss_preset = 0; // DLSS only: NVSDK_NGX_DLSS_Hint_Render_Preset value, 0 = NVIDIA's default
+        float near_plane = 0; // FSR only: the camera's near plane (reverse-Z, infinite far), 0 = unknown
+        float vfov_rad = 0; // FSR only: vertical field of view in radians, 0 = unknown
+        float sharpness = 0; // FSR only: RCAS sharpening 0..1, 0 = off
     };
 
 

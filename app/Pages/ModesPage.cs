@@ -35,6 +35,7 @@ static class ModesPage
         cards.Children.Add(Card(window, game, QuickMode.DlaaFg, "DLAA + FG", "Beste Bildqualität mit verdoppelter Bildrate. RTX 40/50.", current));
         cards.Children.Add(Card(window, game, QuickMode.Dlaa, "Nur DLAA", "Kantenglättung von NVIDIA, ohne generierte Bilder.", current));
         cards.Children.Add(Card(window, game, QuickMode.TaaFg, "Nur FG", "Kantenglättung mit TAA statt DLAA. Noch nicht im Spiel geprüft.", current));
+        cards.Children.Add(Card(window, game, QuickMode.Fsr, "AMD FSR (experimentell)", "FSR 4 auf Radeon RX 6000 und neuer, sonst FSR 3.1. Ohne FG.", current));
         cards.Children.Add(Card(window, game, QuickMode.Off, "Aus", "Keine Kantenglättung und kein FG. Die ReShade-Filter bleiben.", current));
         page.Children.Add(cards);
 

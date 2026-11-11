@@ -69,6 +69,6 @@ jobs:
         with:
           name: ED-Overdrive
           path: |
-            app/bin/publish/ED-Overdrive.exe
+            app/bin/publish/ED-Overdrive-FSR.exe
             app/ThirdParty/EDAA.zip
           retention-days: 7

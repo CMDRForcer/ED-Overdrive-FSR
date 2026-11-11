@@ -82,6 +82,7 @@ add_library(edaa SHARED
 	addon/src/settings.cpp
 	addon/src/dlss.cpp
 	addon/src/xess.cpp
+	addon/src/fsr.cpp
 	addon/src/fg_present.cpp
 	addon/src/gpu_profiler.cpp
 	addon/edaa.rc
@@ -130,6 +131,27 @@ if(EDAA_WITH_XESS AND EXISTS ${XESS_DIR}/inc/xess/xess_d3d12.h)
 else()
 	target_compile_definitions(edaa PRIVATE EDAA_XESS=0)
 	message(STATUS "Building without XeSS (EDAA_WITH_XESS off or SDK not in third_party/xess)")
+endif()
+# AMD FSR 4 / 3.1 (experimental, Native AA and upscaling through a D3D12 bridge):
+# built in when the FidelityFX SDK submodule third_party/fidelityfx is checked out.
+# Headers only: amd_fidelityfx_loader_dx12.dll is loaded at run time from the
+# add-on folder and picks FSR 4 or 3.1 from amd_fidelityfx_upscaler_dx12.dll
+# (AMD's signed DLLs, shipped next to EDAA.addon64).
+option(EDAA_WITH_FSR "Build with AMD FSR when the FidelityFX SDK is present" ON)
+set(FFX_DIR ${CMAKE_SOURCE_DIR}/third_party/fidelityfx/Kits/FidelityFX)
+if(EDAA_WITH_FSR AND EXISTS ${FFX_DIR}/upscalers/include/ffx_upscale.h)
+	target_include_directories(edaa SYSTEM PRIVATE ${FFX_DIR}/api/include ${FFX_DIR}/upscalers/include)
+	target_link_libraries(edaa PRIVATE d3d12.lib delayimp.lib)
+	target_link_options(edaa PRIVATE /DELAYLOAD:d3d12.dll)
+	target_compile_definitions(edaa PRIVATE EDAA_FSR=1)
+	add_custom_command(TARGET edaa POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			${FFX_DIR}/signedbin/amd_fidelityfx_loader_dx12.dll
+			${FFX_DIR}/signedbin/amd_fidelityfx_upscaler_dx12.dll
+			$<TARGET_FILE_DIR:edaa>)
+else()
+	target_compile_definitions(edaa PRIVATE EDAA_FSR=0)
+	message(STATUS "Building without FSR (EDAA_WITH_FSR off or SDK not in third_party/fidelityfx)")
 endif()
 # NVIDIA Streamline (DLSS Frame Generation, experimental): headers only, the DLLs
 # are loaded at run time from the add-on folder. third_party/streamline is the

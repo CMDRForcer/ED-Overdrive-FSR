@@ -31,6 +31,7 @@ namespace edaa
         taa = 0, // EDAA TAA (taa.hlsl)
         dlaa = 1, // NVIDIA DLSS at native resolution (dlss.cpp); falls back to TAA if unavailable
         xess = 2, // Intel XeSS Native AA through a D3D12 bridge (xess.cpp); falls back to TAA if unavailable
+        fsr = 3, // AMD FSR 4 / 3.1 Native AA through a D3D12 bridge (fsr.cpp, experimental); falls back to TAA if unavailable
     };
 
     // What replaces the game's final upscale when it renders below the display size.
@@ -40,6 +41,7 @@ namespace edaa
         dlss = 1, // NVIDIA DLSS on the tonemapped image (passes.cpp run_upscale)
         xess = 2, // Intel XeSS on the tonemapped image, through the D3D12 bridge
         taa = 3, // EDAA TAA upscaling on the tonemapped image (taa.hlsl ps_taau)
+        fsr = 4, // AMD FSR on the tonemapped image, through the D3D12 bridge (experimental)
     };
 
 
@@ -60,6 +62,7 @@ namespace edaa
         bool dlss_reactive_mask = false; // DLSS/XeSS: current frame where transparents were drawn (reactive mask)
         float dlss_reactive_strength = 1.0f; // its scale, 0..2
         float dlss_reactive_threshold = 0.75f; // share of the pixel the transparents must change to count, 0..0.95
+        float fsr_sharpness = 0.0f; // AMD FSR (experimental): RCAS sharpening 0..1, 0 = off
         int dlss_preset = 0; // DLSS model: 0 = NVIDIA's default (K for DLAA), else NVSDK_NGX_DLSS_Hint_Render_Preset (J 10, K 11, L 12, M 13)
         float mip_bias_extra = 0; // developer, not saved: added to the upscaling mip bias
         bool upscaler_jitter_flip = false; // developer, not saved: negate the jitter passed to DLSS/XeSS (sign convention check)
@@ -303,6 +306,7 @@ namespace edaa
         const upscaler u = c.game_upscale                      ? upscaler::game
             : c.aa_method == static_cast<int>(aa_method::dlaa) ? upscaler::dlss
             : c.aa_method == static_cast<int>(aa_method::xess) ? upscaler::xess
+            : c.aa_method == static_cast<int>(aa_method::fsr)  ? upscaler::fsr
                                                                : upscaler::taa;
         c.upscaling = static_cast<int>(u);
     }

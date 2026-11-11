@@ -6,7 +6,7 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>ED-Overdrive</AssemblyName>
+    <AssemblyName>ED-Overdrive-FSR</AssemblyName>
     <RootNamespace>GenFrame.Setup</RootNamespace>
     <Version>0.1.0</Version>
     <Product>ED-Overdrive</Product>

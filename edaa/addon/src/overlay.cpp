@@ -9,6 +9,7 @@
 #include "fg.hpp"
 #include "gpu_profiler.hpp"
 #include "xess.hpp"
+#include "fsr.hpp"
 #include "state.hpp"
 
 #include <cstdio>
@@ -56,10 +57,11 @@ namespace edaa
             }
 
             const bool use_xess = used == upscaler::xess;
+            const bool use_fsr = used == upscaler::fsr;
             edit(ImGui::Checkbox("HUD mask (cockpit HUD from the current frame: no trails)", &s.config.upscale_hud_mask));
             edit(ImGui::Checkbox("Texture mip bias (display resolution texture detail)", &s.config.upscale_mip_bias));
-            ImGui::Text("Upscaling (%s): %s", use_xess ? "XeSS" : used == upscaler::taa ? "EDAA TAA"
-                                                                                        : "DLSS",
+            ImGui::Text("Upscaling (%s): %s", use_xess ? "XeSS" : use_fsr ? "AMD FSR" : used == upscaler::taa ? "EDAA TAA"
+                                                                                                          : "DLSS",
                 s.upscale_status);
             ImGui::Text("Jitter: %d phases, texture LOD bias %+.2f", s.jitter_phases, s.mip_bias_value.load());
 
@@ -69,7 +71,7 @@ namespace edaa
                 return;
             }
 
-            const upscale_info info = use_xess ? xess::info() : dlss::info();
+            const upscale_info info = use_xess ? xess::info() : use_fsr ? fsr::info() : dlss::info();
 
             if (info.modes.empty()) {
                 return;
@@ -78,7 +80,7 @@ namespace edaa
             // Each mode's range comes from the API for this display size. The game
             // picks the render size: its supersampling should fall in the range.
             if (ImGui::BeginTable("modes", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_SizingFixedFit)) {
-                ImGui::TableSetupColumn(use_xess ? "XeSS preset" : "DLSS mode");
+                ImGui::TableSetupColumn(use_xess ? "XeSS preset" : use_fsr ? "FSR mode" : "DLSS mode");
                 ImGui::TableSetupColumn("Optimal");
                 ImGui::TableSetupColumn("Accepted render sizes");
                 ImGui::TableSetupColumn("Scale");
@@ -121,6 +123,7 @@ namespace edaa
                 { aa_method::taa, "EDAA TAA", 1 },
                 { aa_method::dlaa, "NVIDIA DLSS", dlss::availability() },
                 { aa_method::xess, "Intel XeSS", xess::availability() },
+                { aa_method::fsr, "AMD FSR (experimental)", fsr::availability() },
             };
             // A saved method that cannot run is replaced by the TAA (passes.cpp).
             // The same choice sets the upscaler used below 1x (sync_upscaler).
@@ -206,6 +209,23 @@ namespace edaa
             else if (s.config.aa_method == static_cast<int>(aa_method::xess) && (EDAA_DEVELOPER || xess::availability() == 1)) {
                 ImGui::Text("XeSS: %s", xess::status().c_str());
             }
+            else if (s.config.aa_method == static_cast<int>(aa_method::fsr) && (EDAA_DEVELOPER || fsr::availability() == 1)) {
+                // FSR 4 on the Radeon GPUs AMD's DLL supports, FSR 3.1 elsewhere (AMD's choice).
+                const std::string fsr_version = fsr::version();
+                ImGui::Text("FSR: %s", fsr::status().c_str());
+                ImGui::Text("Version: %s (experimental)", fsr_version.empty() ? "unknown" : fsr_version.c_str());
+                edit(ImGui::SliderFloat("FSR sharpening (0 = off)", &s.config.fsr_sharpness, 0.0f, 1.0f, "%.2f"));
+                const float fsr_sharpness_default = settings{}.fsr_sharpness;
+                ImGui::SameLine();
+                ImGui::BeginDisabled(s.config.fsr_sharpness == fsr_sharpness_default);
+
+                if (ImGui::SmallButton("Reset##fsr_sharpness")) {
+                    s.config.fsr_sharpness = fsr_sharpness_default;
+                    edit.changed = true;
+                }
+
+                ImGui::EndDisabled();
+            }
 
             draw_upscaling(s, edit);
 
@@ -231,7 +251,8 @@ namespace edaa
             // runs (its upscaling uses part of it), DLSS/XeSS have none.
             const bool below = s.render_w != 0 && s.render_w < s.back_buffer_w;
             const bool neural = (s.config.aa_method == static_cast<int>(aa_method::dlaa) && dlss::availability() == 1) ||
-                (s.config.aa_method == static_cast<int>(aa_method::xess) && xess::availability() == 1);
+                (s.config.aa_method == static_cast<int>(aa_method::xess) && xess::availability() == 1) ||
+                (s.config.aa_method == static_cast<int>(aa_method::fsr) && fsr::availability() == 1);
             const bool taau = s.upscaling_active && s.upscaler_used == static_cast<int>(upscaler::taa);
             const bool taa = !s.upscaling_active && !neural;
 

@@ -1,7 +1,7 @@
 <Window x:Class="GenFrame.Setup.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ED-Overdrive" Width="900" Height="600" MinWidth="760" MinHeight="480"
+        Title="ED-Overdrive – FSR experimentell" Width="900" Height="600" MinWidth="760" MinHeight="480"
         Background="{StaticResource WindowBrush}" WindowStartupLocation="CenterScreen">
     <Grid Margin="12">
         <Grid.RowDefinitions>

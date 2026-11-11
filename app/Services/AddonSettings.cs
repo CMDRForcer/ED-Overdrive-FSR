@@ -3,7 +3,7 @@ using System.IO;
 
 namespace GenFrame.Setup.Services;
 
-public enum QuickMode { DlaaFg, Dlaa, TaaFg, Off }
+public enum QuickMode { DlaaFg, Dlaa, TaaFg, Off, Fsr }
 
 public enum SettingKind { Toggle, Whole, Real, Choice }
 
@@ -16,6 +16,10 @@ public static class AddonSettings
 {
     public const string Section = "EDAA";
 
+    public static readonly (string Value, string Text)[] Methods = [
+        ("0", "EDAA TAA"), ("1", "NVIDIA DLSS"), ("2", "Intel XeSS"), ("3", "AMD FSR 4 / 3.1 (experimentell)"),
+    ];
+
     public static readonly (string Value, string Text)[] DlaaModels = [
         ("0", "NVIDIA-Standard"), ("10", "J"), ("11", "K"), ("12", "L"), ("13", "M"),
     ];
@@ -24,6 +28,8 @@ public static class AddonSettings
     public static readonly AddonSetting[] All = [
         new("Frame Generation", "fg_hud_protect", "HUD ruhig halten", "Das Cockpit-HUD verschmiert nicht in generierten Bildern.", SettingKind.Toggle, "1"),
         new("Frame Generation", "fg_fps_limit", "Bildlimit (angezeigte FPS, 0 = aus)", "Knapp unter der Bildwiederholrate, zum Beispiel 140 bei 144 Hz. Keinen zweiten Limiter nutzen.", SettingKind.Whole, "140", 0, 360),
+        new("Kantenglättung", "aa_method", "Methode", "AMD FSR ist experimentell: FSR 4 auf Radeon RX 6000 und neuer, sonst FSR 3.1.", SettingKind.Choice, "1", Choices: Methods),
+        new("Kantenglättung", "fsr_sharpness", "FSR-Schärfe (0 = aus)", "Nur für AMD FSR.", SettingKind.Real, "0", 0, 1),
         new("Kantenglättung", "dlss_preset", "DLAA-Modell", "Das Modell, das EDAA bei NVIDIA anfordert.", SettingKind.Choice, "11", Choices: DlaaModels),
         new("Kantenglättung", "taa_before_hud", "Vor dem HUD glätten", "An: FG-HUD-Schutz voll, das HUD bleibt aber ungeglättet. Aus: HUD geglättet, FG-HUD-Schutz schwächer.", SettingKind.Toggle, "1"),
         new("Kantenglättung", "hud_learn", "Cockpit-HUD an den Panel-Texturen erkennen", "Nötig, wenn EDHM die HUD-Shader ersetzt: sonst wirken HUD-Maske und FG-HUD-Schutz nicht.", SettingKind.Toggle, "1"),
@@ -81,6 +87,7 @@ public static class AddonSettings
             ("1", true) => QuickMode.DlaaFg,
             ("1", false) => QuickMode.Dlaa,
             ("0", true) => QuickMode.TaaFg,
+            ("3", false) => QuickMode.Fsr,
             _ => null,
         };
     }
@@ -95,7 +102,7 @@ public static class AddonSettings
         values["taa_enabled"] = antiAliasing ? "1" : "0";
         values["jitter_enabled"] = antiAliasing ? "1" : "0"; // TAA needs jitter, the plain image does not
         if (antiAliasing) {
-            values["aa_method"] = mode == QuickMode.TaaFg ? "0" : "1";
+            values["aa_method"] = mode == QuickMode.TaaFg ? "0" : mode == QuickMode.Fsr ? "3" : "1";
         }
 
         values["fg_generate"] = frameGeneration ? "1" : "0";

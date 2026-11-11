@@ -28,6 +28,7 @@ public sealed class InstallService(GameInstall game, Action<string> log)
 
     static readonly string[] PackageFiles = [
         AddonName, "nvngx_dlss.dll", "nvngx_dlssg.dll", "libxess.dll",
+        "amd_fidelityfx_loader_dx12.dll", "amd_fidelityfx_upscaler_dx12.dll",
         "sl.common.dll", "sl.dlss_g.dll", "sl.interposer.dll", "sl.pcl.dll", "sl.reflex.dll",
     ];
     static readonly string[] DevFiles = [
@@ -69,7 +70,7 @@ public sealed class InstallService(GameInstall game, Action<string> log)
                 var entry = zip.GetEntry(name) ?? throw new InvalidDataException($"{name} fehlt im Paket.");
                 entry.ExtractToFile(Path.Combine(game.Folder, name), overwrite: true);
             }
-            // The licenses of everything the package brings (EDAA, ReShade, Streamline, DLSS, XeSS, ImGui).
+            // The licenses of everything the package brings (EDAA, ReShade, Streamline, DLSS, XeSS, AMD FidelityFX, ImGui).
             var licenses = Path.Combine(game.Folder, LicenseFolder);
             Directory.CreateDirectory(licenses);
             foreach (var entry in zip.Entries.Where(e => e.Name.Length > 0 &&
@@ -78,7 +79,7 @@ public sealed class InstallService(GameInstall game, Action<string> log)
                 entry.ExtractToFile(Path.Combine(licenses, name), overwrite: true);
             }
         }
-        log($"EDAA {BundledEdaa} installiert (DLAA, XeSS, Streamline), aus der App. Lizenzen in „{LicenseFolder}“.");
+        log($"EDAA {BundledEdaa} installiert (DLAA, XeSS, AMD FSR experimentell, Streamline), aus der App. Lizenzen in „{LicenseFolder}“.");
 
         if (dev != null) {
             foreach (var file in Directory.EnumerateFiles(dev.Value.Folder)) {

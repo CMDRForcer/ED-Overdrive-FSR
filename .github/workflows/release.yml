@@ -1,5 +1,5 @@
 # A published release (tag vX.Y.Z on main): build the add-on and the app with the add-on inside,
-# then attach ED-Overdrive.exe and EDAA-<version>.zip (for installing by hand) to the release.
+# then attach ED-Overdrive-FSR.exe and EDAA-<version>.zip (for installing by hand) to the release.
 name: Release
 
 on:
@@ -52,7 +52,7 @@ jobs:
 
       - name: Attach to the release
         shell: pwsh
-        run: gh release upload "$env:TAG" app/bin/publish/ED-Overdrive.exe "EDAA-${{ steps.edaa.outputs.version }}.zip" --clobber
+        run: gh release upload "$env:TAG" app/bin/publish/ED-Overdrive-FSR.exe "EDAA-${{ steps.edaa.outputs.version }}.zip" --clobber
         env:
           TAG: ${{ github.event.release.tag_name }}
           GH_TOKEN: ${{ github.token }}

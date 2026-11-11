@@ -1,5 +1,5 @@
 # Packs a Release build of EDAA into the zip that ED-Overdrive embeds and every release attaches:
-# the add-on, the DLSS/XeSS/Streamline DLLs, version.txt and all license texts.
+# the add-on, the DLSS/XeSS/Streamline/AMD FSR DLLs, version.txt and all license texts.
 #   edaa/tools/bundle.ps1 -Release edaa/build/Release -Out app/ThirdParty/EDAA.zip
 param(
     [Parameter(Mandatory)][string]$Release,
@@ -14,7 +14,8 @@ $stage = Join-Path ([IO.Path]::GetTempPath()) ("edaa-bundle-" + [guid]::NewGuid(
 New-Item -ItemType Directory -Force "$stage\licenses" | Out-Null
 try {
     foreach ($f in 'EDAA.addon64', 'nvngx_dlss.dll', 'libxess.dll', 'sl.interposer.dll', 'sl.common.dll',
-                   'sl.dlss_g.dll', 'sl.reflex.dll', 'sl.pcl.dll', 'nvngx_dlssg.dll') {
+                   'sl.dlss_g.dll', 'sl.reflex.dll', 'sl.pcl.dll', 'nvngx_dlssg.dll',
+                   'amd_fidelityfx_loader_dx12.dll', 'amd_fidelityfx_upscaler_dx12.dll') {
         Copy-Item (Join-Path $Release $f) $stage
     }
     Copy-Item "$edaa\README.md", "$edaa\LICENSE", "$edaa\THIRD_PARTY_NOTICES.md" $stage
@@ -26,6 +27,7 @@ try {
         "$tp\xess\third-party-programs.txt"              = 'Intel-XeSS-third-party-programs.txt'
         "$tp\streamline\license.txt"                     = 'NVIDIA-Streamline-LICENSE.txt'
         "$tp\streamline\external\ngx-sdk\license.txt"    = 'NVIDIA-NGX-SDK-LICENSE.txt'
+        "$tp\fidelityfx\Kits\FidelityFX\docs\license.md" = 'AMD-FidelityFX-LICENSE.md'
     }
     foreach ($entry in $licenses.GetEnumerator()) {
         Copy-Item $entry.Key (Join-Path "$stage\licenses" $entry.Value)
