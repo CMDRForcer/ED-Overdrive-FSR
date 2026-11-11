@@ -96,8 +96,29 @@ motion_output ps_motion(float4 pos : SV_Position)
     }
 
     // Same for what the automatic detection found moving with the camera (t2, ps_ship_auto).
-    if (o.mask == 0 && vehicle_on.z > 0 && depth > 0 && mask_tex.Load(int3(pos.xy, 0)) > 0.5) {
-        o.mask = 0.4;
+    // Its edges stay undecided (the jitter moves them across the silhouette): a pixel
+    // up to 2 pixels from a detected one, at about its distance (not the world
+    // behind), counts too.
+    if (o.mask == 0 && vehicle_on.z > 0 && depth > 0) {
+        if (mask_tex.Load(int3(pos.xy, 0)) > 0.5) {
+            o.mask = 0.4;
+        }
+        else {
+            const float view_z = params.z / depth;
+            const int2 offsets[12] = { int2(1, 0), int2(-1, 0), int2(0, 1), int2(0, -1), int2(2, 0), int2(-2, 0), int2(0, 2), int2(0, -2),
+                int2(1, 1), int2(-1, 1), int2(1, -1), int2(-1, -1) };
+
+            // clang-format off
+            [unroll] for (int i = 0; i < 12; ++i) {
+                const int3 q = int3(clamp(int2(pos.xy) + offsets[i], int2(0, 0), int2(render_size.xy) - 1), 0);
+                const float d = scene_depth.Load(q);
+
+                if (mask_tex.Load(q) > 0.5 && d > 0 && view_z < params.z / d * 1.5 + 0.5) {
+                    o.mask = 0.4;
+                }
+            }
+            // clang-format on
+        }
     }
 
     // Same world point relative to the previous camera position.
