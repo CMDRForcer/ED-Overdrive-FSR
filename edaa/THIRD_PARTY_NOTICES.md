@@ -321,7 +321,8 @@ limitations under the License.
 ## AMD FidelityFX SDK (FSR 4 / 3.1, experimental)
 
 - Used for: AMD FSR Native AA and upscaling (`amd_fidelityfx_loader_dx12.dll`,
-  loaded at run time by `EDAA.addon64`, and `amd_fidelityfx_upscaler_dx12.dll`;
+  loaded at run time by `EDAA.addon64`, `amd_fidelityfx_upscaler_dx12.dll` and
+  `amd_fidelityfx_framegeneration_dx12.dll` for FSR Frame Generation;
   FidelityFX SDK 2.4.0, FSR 4.1.2 with FSR 3.1.6 fallback). The DLLs are AMD's
   signed binaries, shipped unmodified; API headers under the MIT license.
 - License: AMD FidelityFX license (`licenses/AMD-FidelityFX-LICENSE.md`):

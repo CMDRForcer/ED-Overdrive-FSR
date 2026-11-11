@@ -140,7 +140,7 @@ endif()
 option(EDAA_WITH_FSR "Build with AMD FSR when the FidelityFX SDK is present" ON)
 set(FFX_DIR ${CMAKE_SOURCE_DIR}/third_party/fidelityfx/Kits/FidelityFX)
 if(EDAA_WITH_FSR AND EXISTS ${FFX_DIR}/upscalers/include/ffx_upscale.h)
-	target_include_directories(edaa SYSTEM PRIVATE ${FFX_DIR}/api/include ${FFX_DIR}/upscalers/include)
+	target_include_directories(edaa SYSTEM PRIVATE ${FFX_DIR}/api/include ${FFX_DIR}/upscalers/include ${FFX_DIR}/framegeneration/include)
 	target_link_libraries(edaa PRIVATE d3d12.lib delayimp.lib)
 	target_link_options(edaa PRIVATE /DELAYLOAD:d3d12.dll)
 	target_compile_definitions(edaa PRIVATE EDAA_FSR=1)
@@ -148,6 +148,7 @@ if(EDAA_WITH_FSR AND EXISTS ${FFX_DIR}/upscalers/include/ffx_upscale.h)
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different
 			${FFX_DIR}/signedbin/amd_fidelityfx_loader_dx12.dll
 			${FFX_DIR}/signedbin/amd_fidelityfx_upscaler_dx12.dll
+			${FFX_DIR}/signedbin/amd_fidelityfx_framegeneration_dx12.dll
 			$<TARGET_FILE_DIR:edaa>)
 else()
 	target_compile_definitions(edaa PRIVATE EDAA_FSR=0)

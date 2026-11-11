@@ -239,7 +239,7 @@ namespace edaa
 
             if (ImGui::Button("Reset to defaults")) {
                 s.config = settings{};
-                s.pick_method = true; // DLSS, else XeSS, else TAA
+                s.pick_method = true; // DLSS, else FSR, else XeSS, else TAA
                 edit.changed = true;
             }
         }
@@ -510,13 +510,29 @@ namespace edaa
 
     namespace
     {
-        // DLSS Frame Generation (fg_present.cpp): on/off, frame limit, status.
+        // Frame generation (fg_present.cpp): NVIDIA DLSS-G or AMD FSR FG, on/off, frame limit, status.
         void draw_frame_generation(addon_state& s, change_tracker& edit)
         {
             const fg::status st = fg::get_status();
 
-            if (edit(ImGui::Checkbox("DLSS Frame Generation (RTX 40/50, 2x)", &s.config.fg_generate)) && s.config.fg_generate) {
+            if (edit(ImGui::Checkbox("Frame Generation (2x)", &s.config.fg_generate)) && s.config.fg_generate) {
                 s.config.fg_present_test = true; // the D3D12 swap chain it needs
+            }
+
+            // Read at game start: changing it here takes effect after a restart (no rebuild while playing).
+            const char* backends[] = { "NVIDIA DLSS-G (RTX 40/50)", "AMD FSR Frame Generation (experimental, any GPU)" };
+            int backend = s.config.fg_backend == 1 ? 1 : 0;
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18);
+
+            if (ImGui::Combo("Frame generation by", &backend, backends, 2) && backend != s.config.fg_backend) {
+                s.config.fg_backend = backend;
+                edit(true);
+            }
+
+            const bool running_amd = st.amd, running_nv = st.streamline;
+
+            if ((s.config.fg_backend == 1 && running_nv) || (s.config.fg_backend == 0 && running_amd)) {
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "Restart the game to switch the frame generation.");
             }
 
             edit(ImGui::Checkbox("Keep the cockpit HUD steady (no smearing in generated frames)", &s.config.fg_hud_protect));
@@ -524,7 +540,7 @@ namespace edaa
             edit(ImGui::SliderInt("Frame limit (displayed FPS, 0 = off)", &s.config.fg_fps_limit, 0, 360));
             ImGui::TextDisabled("Use this limit only (no external limiter): set it just below the refresh rate, e.g. 140 at 144 Hz.");
 
-            if (s.config.fg_generate && !st.streamline) {
+            if (s.config.fg_generate && !st.streamline && !st.amd) {
                 ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), st.error != nullptr ? "Stopped: %s" : "Restart the game to start frame generation.",
                     st.error != nullptr ? st.error : "");
                 return;
@@ -560,7 +576,12 @@ namespace edaa
                 ImGui::Text("Status: starting, %.0f FPS", st.real_fps);
             }
 
-            ImGui::Text("Reflex low latency: %s", st.reflex ? "on" : "off");
+            if (st.amd) {
+                ImGui::TextUnformatted("AMD FSR Frame Generation (experimental), frame limit by EDAA (no Reflex)");
+            }
+            else {
+                ImGui::Text("Reflex low latency: %s", st.reflex ? "on" : "off");
+            }
 
             if (s.config.fg_hud_protect && st.generating) {
                 ImGui::Text("HUD protection: %s", st.hud_protected ? "active" : "no HUD found this frame");

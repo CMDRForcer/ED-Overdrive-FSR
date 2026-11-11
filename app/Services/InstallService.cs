@@ -28,7 +28,7 @@ public sealed class InstallService(GameInstall game, Action<string> log)
 
     static readonly string[] PackageFiles = [
         AddonName, "nvngx_dlss.dll", "nvngx_dlssg.dll", "libxess.dll",
-        "amd_fidelityfx_loader_dx12.dll", "amd_fidelityfx_upscaler_dx12.dll",
+        "amd_fidelityfx_loader_dx12.dll", "amd_fidelityfx_upscaler_dx12.dll", "amd_fidelityfx_framegeneration_dx12.dll",
         "sl.common.dll", "sl.dlss_g.dll", "sl.interposer.dll", "sl.pcl.dll", "sl.reflex.dll",
     ];
     static readonly string[] DevFiles = [
@@ -203,10 +203,19 @@ public sealed class InstallService(GameInstall game, Action<string> log)
             ini.Set("OVERLAY", "TutorialProgress", "4");
         }
 
+        // Radeon: AMD FSR (FSR 4 on RX 6000 and newer) instead of DLSS, which would fall back to the TAA there.
+        var amd = GpuInfo.PrimaryVendor() == GpuVendor.Amd;
         foreach (var (key, value) in Defaults) {
             if (clean || ini.Get("EDAA", key) == null) {
-                ini.Set("EDAA", key, value);
+                ini.Set("EDAA", key, key == "aa_method" && amd ? "3" : value);
             }
+        }
+        // Radeon has no DLSS-G: AMD FSR Frame Generation.
+        if (amd && (clean || ini.Get("EDAA", "fg_backend") == null)) {
+            ini.Set("EDAA", "fg_backend", "1");
+        }
+        if (amd) {
+            log("AMD-Grafikkarte erkannt: Kantenglättung und Frame Generation mit AMD FSR (experimentell).");
         }
         ini.Save(path);
         log(clean ? "ReShade.ini mit Standardwerten neu angelegt." : "ReShade.ini ergänzt (deine Werte bleiben).");

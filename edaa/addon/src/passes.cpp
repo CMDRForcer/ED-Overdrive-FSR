@@ -1422,16 +1422,20 @@ namespace edaa
 
         // First launch or reset to defaults: the best method this system runs,
         // once the backends are probed (first resolve).
-        if (s.pick_method && dlss::availability() >= 0 && xess::availability() >= 0) {
+        // NVIDIA DLSS, else AMD FSR (FSR 4 on Radeon), else Intel XeSS, else the TAA.
+        if (s.pick_method && dlss::availability() >= 0 && xess::availability() >= 0 && fsr::availability() >= 0) {
             s.pick_method = false;
             const aa_method best = dlss::availability() == 1 ? aa_method::dlaa
+                : fsr::availability() == 1                   ? aa_method::fsr
                 : xess::availability() == 1                  ? aa_method::xess
                                                              : aa_method::taa;
             s.config.aa_method = static_cast<int>(best);
             sync_upscaler(s.config);
             save_settings(s.config);
-            reshade::log::message(reshade::log::level::info, best == aa_method::dlaa ? "EDAA: default method NVIDIA DLSS" : best == aa_method::xess ? "EDAA: default method Intel XeSS"
-                                                                                                                                                    : "EDAA: default method EDAA TAA");
+            reshade::log::message(reshade::log::level::info, best == aa_method::dlaa ? "EDAA: default method NVIDIA DLSS"
+                    : best == aa_method::fsr                                         ? "EDAA: default method AMD FSR"
+                    : best == aa_method::xess                                        ? "EDAA: default method Intel XeSS"
+                                                                                     : "EDAA: default method EDAA TAA");
         }
 
         s.vehicle_known = in.vehicle_known;

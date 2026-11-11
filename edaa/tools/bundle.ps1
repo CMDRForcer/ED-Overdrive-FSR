@@ -15,7 +15,7 @@ New-Item -ItemType Directory -Force "$stage\licenses" | Out-Null
 try {
     foreach ($f in 'EDAA.addon64', 'nvngx_dlss.dll', 'libxess.dll', 'sl.interposer.dll', 'sl.common.dll',
                    'sl.dlss_g.dll', 'sl.reflex.dll', 'sl.pcl.dll', 'nvngx_dlssg.dll',
-                   'amd_fidelityfx_loader_dx12.dll', 'amd_fidelityfx_upscaler_dx12.dll') {
+                   'amd_fidelityfx_loader_dx12.dll', 'amd_fidelityfx_upscaler_dx12.dll', 'amd_fidelityfx_framegeneration_dx12.dll') {
         Copy-Item (Join-Path $Release $f) $stage
     }
     Copy-Item "$edaa\README.md", "$edaa\LICENSE", "$edaa\THIRD_PARTY_NOTICES.md" $stage

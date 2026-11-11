@@ -25,6 +25,7 @@ namespace edaa::fg
     {
         bool d3d12_path = false; // presenting through the D3D12 swap chain
         bool streamline = false; // Streamline loaded (DLSS-G and Reflex available)
+        bool amd = false; // AMD FSR Frame Generation instead (experimental, EDAA's own frame limiter)
         bool generating = false; // DLSS-G on and adding frames
         bool background = false; // the game is not the foreground window (DLSS-G pauses)
         bool waiting = false; // no scene from EDAA (menus, maps, loading): DLSS-G pauses

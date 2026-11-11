@@ -67,6 +67,7 @@ namespace edaa
             EDAA_FIELD(fg_present_test, boolean),
             EDAA_FIELD(fg_factory, integer),
             EDAA_FIELD(fg_generate, boolean),
+            EDAA_FIELD(fg_backend, integer),
             EDAA_FIELD(fg_hud_protect, boolean),
             EDAA_FIELD(fg_fps_limit, integer),
             EDAA_FIELD(gpu_profiler, boolean),

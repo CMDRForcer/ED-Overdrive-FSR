@@ -3,7 +3,7 @@ using System.IO;
 
 namespace GenFrame.Setup.Services;
 
-public enum QuickMode { DlaaFg, Dlaa, TaaFg, Off, Fsr }
+public enum QuickMode { DlaaFg, Dlaa, TaaFg, Off, Fsr, FsrFg }
 
 public enum SettingKind { Toggle, Whole, Real, Choice }
 
@@ -20,12 +20,17 @@ public static class AddonSettings
         ("0", "EDAA TAA"), ("1", "NVIDIA DLSS"), ("2", "Intel XeSS"), ("3", "AMD FSR 4 / 3.1 (experimentell)"),
     ];
 
+    public static readonly (string Value, string Text)[] FgBackends = [
+        ("0", "NVIDIA DLSS-G (RTX 40/50)"), ("1", "AMD FSR Frame Generation (experimentell, jede Karte)"),
+    ];
+
     public static readonly (string Value, string Text)[] DlaaModels = [
         ("0", "NVIDIA-Standard"), ("10", "J"), ("11", "K"), ("12", "L"), ("13", "M"),
     ];
 
     // The values worth changing. Defaults as in docs/plan.md, ranges as the overlay's sliders.
     public static readonly AddonSetting[] All = [
+        new("Frame Generation", "fg_backend", "Verfahren", "Wird beim Spielstart gelesen. AMD FSR FG ist experimentell und nutzt EDAAs eigenes Bildlimit statt Reflex.", SettingKind.Choice, "0", Choices: FgBackends),
         new("Frame Generation", "fg_hud_protect", "HUD ruhig halten", "Das Cockpit-HUD verschmiert nicht in generierten Bildern.", SettingKind.Toggle, "1"),
         new("Frame Generation", "fg_fps_limit", "Bildlimit (angezeigte FPS, 0 = aus)", "Knapp unter der Bildwiederholrate, zum Beispiel 140 bei 144 Hz. Keinen zweiten Limiter nutzen.", SettingKind.Whole, "140", 0, 360),
         new("Kantenglättung", "aa_method", "Methode", "AMD FSR ist experimentell: FSR 4 auf Radeon RX 6000 und neuer, sonst FSR 3.1.", SettingKind.Choice, "1", Choices: Methods),
@@ -88,6 +93,7 @@ public static class AddonSettings
             ("1", false) => QuickMode.Dlaa,
             ("0", true) => QuickMode.TaaFg,
             ("3", false) => QuickMode.Fsr,
+            ("3", true) => QuickMode.FsrFg,
             _ => null,
         };
     }
@@ -97,17 +103,18 @@ public static class AddonSettings
     {
         var values = new Dictionary<string, string>();
         var antiAliasing = mode != QuickMode.Off;
-        var frameGeneration = mode is QuickMode.DlaaFg or QuickMode.TaaFg;
+        var frameGeneration = mode is QuickMode.DlaaFg or QuickMode.TaaFg or QuickMode.FsrFg;
 
         values["taa_enabled"] = antiAliasing ? "1" : "0";
         values["jitter_enabled"] = antiAliasing ? "1" : "0"; // TAA needs jitter, the plain image does not
         if (antiAliasing) {
-            values["aa_method"] = mode == QuickMode.TaaFg ? "0" : mode == QuickMode.Fsr ? "3" : "1";
+            values["aa_method"] = mode == QuickMode.TaaFg ? "0" : mode is QuickMode.Fsr or QuickMode.FsrFg ? "3" : "1";
         }
 
         values["fg_generate"] = frameGeneration ? "1" : "0";
         values["fg_present_test"] = frameGeneration ? "1" : "0";
         if (frameGeneration) {
+            values["fg_backend"] = mode == QuickMode.FsrFg ? "1" : "0";
             values["fg_factory"] = "1";
             values["motion_enabled"] = "1";
             values["fg_hud_protect"] = "1";
