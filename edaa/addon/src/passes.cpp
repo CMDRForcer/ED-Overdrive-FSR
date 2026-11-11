@@ -805,6 +805,7 @@ namespace edaa
             // The viewport offset moves the image by +jitter pixels, like a projection jitter.
             const float sign = in.config.upscaler_jitter_flip ? -1.0f : 1.0f;
             u.dlss_preset = in.config.dlss_preset;
+            u.dlss_exposure = in.config.dlss_fixed_exposure ? in.config.dlss_exposure : 0.0f;
             u.jitter_x = in.jitter_x * sign;
             u.jitter_y = in.jitter_y * sign;
             u.reset = gpu.upscaler_last != static_cast<int>(method) || in.camera_cut;

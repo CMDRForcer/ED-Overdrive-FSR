@@ -23,6 +23,7 @@ namespace edaa
         float jitter_x = 0, jitter_y = 0; // pixels, the viewport offset of this frame
         bool reset = false; // camera cut: drop the history
         bool hdr = true; // false: tonemapped image (upscaling at the end of the frame)
+        float dlss_exposure = 0; // DLAA only: fixed exposure (multiplier of the scene values) instead of DLSS's own estimate, 0 = DLSS estimates it
         int dlss_preset = 0; // DLSS only: NVSDK_NGX_DLSS_Hint_Render_Preset value, 0 = NVIDIA's default
         float near_plane = 0; // FSR only: the camera's near plane (reverse-Z, infinite far), 0 = unknown
         float vfov_rad = 0; // FSR only: vertical field of view in radians, 0 = unknown

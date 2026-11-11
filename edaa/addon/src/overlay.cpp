@@ -197,6 +197,16 @@ namespace edaa
                     ImGui::EndCombo();
                 }
 
+#if EDAA_DEVELOPER
+                // Test: a fixed exposure instead of DLSS's own estimate (DLAA only, recreates the feature).
+                edit(ImGui::Checkbox("Fixed exposure (test, DLAA)", &s.config.dlss_fixed_exposure));
+
+                if (s.config.dlss_fixed_exposure) {
+                    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+                    edit(ImGui::SliderFloat("Exposure", &s.config.dlss_exposure, 0.1f, 1000.0f, "%.1f", ImGuiSliderFlags_Logarithmic));
+                }
+#endif
+
                 // Reactive mask: the current frame where transparents were drawn.
                 edit(ImGui::Checkbox("Reactive mask (particles, glass, glows: no trails)", &s.config.dlss_reactive_mask));
 
