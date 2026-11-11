@@ -4,19 +4,33 @@ A ReShade add-on that adds TAA (Temporal Anti-Aliasing) to Elite Dangerous
 Odyssey (DX11): sub-pixel jitter, motion vectors from the game's camera and
 depth, and a TAA resolve inserted into the game's frame before the cockpit
 HUD, bloom and tonemapping. NVIDIA DLAA (DLSS at native resolution, RTX
-GPUs) or Intel XeSS Native AA (any recent GPU, through a D3D12 bridge) can
-replace the EDAA TAA at the same point.
+GPUs), AMD FSR 4 / 3.1 (any GPU with D3D12; AMD's DLL picks FSR 4 on Radeon
+RX 6000 and newer) or Intel XeSS Native AA (any recent GPU) can replace the
+EDAA TAA at the same point; below 1.0 supersampling the same method upscales.
 
-**DLSS Frame Generation (RTX 40/50, added in ED-Overdrive):** the final
-image is presented through a D3D12 swap chain driven by NVIDIA Streamline
-(DLSS-G 2x, Reflex low latency and frame limiter), with EDAA's depth and
-motion vectors and the cockpit HUD kept steady. Turn it on in the overlay
-(Alt+R, EDAA, "Frame Generation"), restart the game once, and use its frame
-limit (just below the refresh rate, e.g. 140 at 144 Hz) instead of any other
-limiter. Needs Windows hardware-accelerated GPU scheduling.
+**Frame Generation (added in ED-Overdrive):** the final image is presented
+through a D3D12 swap chain, with EDAA's depth and motion vectors and the
+cockpit HUD kept steady. Two backends:
+
+| | NVIDIA DLSS-G | AMD FSR Frame Generation (experimental) |
+|---|---|---|
+| GPUs | RTX 40/50 | any GPU with D3D12 |
+| Frame limit | Reflex | EDAA's own |
+| Own ship | game stencil | game stencil + automatic detection, optional distance |
+| In the build | NVIDIA | NVIDIA and AMD |
+
+Turn it on in the overlay (Pos1, EDAA, "Frame Generation"), restart the game
+once, and use its frame limit (just below the refresh rate, e.g. 140 at
+144 Hz) instead of any other limiter. Needs Windows hardware-accelerated GPU
+scheduling.
+
+**Two builds** from the same source, each with everything that runs on its
+vendor's GPUs: NVIDIA (`EDAA-<version>.zip`) and AMD
+(`EDAA-<version>-amd.zip`, no NVIDIA DLLs). See
+[docs/vendors.md](docs/vendors.md).
 
 * Original project by Siegfried-Origin: https://github.com/Siegfried-Origin/EDAA
-  (website: https://siegfried-origin.github.io/EDAA/); this copy adds DLSS Frame Generation
+  (website: https://siegfried-origin.github.io/EDAA/); this copy adds Frame Generation, AMD FSR and the vendor builds
 * How it works, settings, diagnostics: [docs/addon.md](docs/addon.md)
 * The game's rendering, reverse-engineered: [docs/reverse-engineering.md](docs/reverse-engineering.md)
 * Finding camera matrices in any DX11 game: [docs/finding-camera-matrices.md](docs/finding-camera-matrices.md)
@@ -38,10 +52,18 @@ Game folder (Steam): `C:\Program Files (x86)\Steam\steamapps\common\Elite Danger
 2. Run it, select `EliteDangerous64.exe` in the game folder and the API
    **DirectX 10/11/12**. It installs `dxgi.dll` and `ReShade.ini`. Skip the
    effect packages (none are needed).
-3. Copy everything from `EDAA-<version>.zip` (attached to each
-   [ED-Overdrive release](https://github.com/CMDRForcer/ED-Overdrive/releases))
-   next to `dxgi.dll`: `EDAA.addon64`, `nvngx_dlss.dll` (DLAA), `libxess.dll`
-   (XeSS), the `sl.*.dll` files and `nvngx_dlssg.dll` (Frame Generation).
+3. Copy everything from the zip for your GPU (attached to each
+   [release](https://github.com/CMDRForcer/ED-Overdrive-FSR/releases))
+   next to `dxgi.dll`:
+
+   | | NVIDIA `EDAA-<version>.zip` | AMD `EDAA-<version>-amd.zip` |
+   |---|---|---|
+   | Add-on | `EDAA.addon64` | `EDAA.addon64` |
+   | AMD FSR and FSR FG | `amd_fidelityfx_*.dll` | `amd_fidelityfx_*.dll` |
+   | Intel XeSS | `libxess.dll` | `libxess.dll` |
+   | NVIDIA DLAA | `nvngx_dlss.dll` | – |
+   | NVIDIA DLSS-G | `sl.*.dll`, `nvngx_dlssg.dll` | – |
+
 4. Set the game's anti-aliasing to off and start the game.
 
 ## Uninstall
@@ -61,12 +83,14 @@ cmake -S edaa -B edaa/build -G "Visual Studio 17 2022" -A x64
 cmake --build edaa/build --config Release
 ```
 
-For Frame Generation, extract the
+AMD build: `-B edaa/build-amd -DEDAA_VENDOR=amd` (no DLSS or Streamline SDK
+needed). NVIDIA build with DLSS-G: extract the
 [Streamline SDK 2.14.16](https://github.com/NVIDIA-RTX/Streamline/releases/tag/v2.14.16)
-to `edaa/third_party/streamline` first. The output is in `edaa/build/Release`.
-CI builds the add-on for every push and pull request
+to `edaa/third_party/streamline` first. The output is in
+`edaa/build/Release` (or `edaa/build-amd/Release`). CI builds both for every
+push and pull request
 ([.github/workflows/build.yml](../.github/workflows/build.yml)) and attaches
-`EDAA-<version>.zip` to every release.
+both zips to every release.
 
 ## Hotkeys
 
@@ -86,8 +110,10 @@ components below keep their own licenses.
 ## Third-party components
 
 ReShade (BSD 3-Clause), Dear ImGui (MIT), the NVIDIA DLSS SDK (NVIDIA RTX
-SDKs license) and the Intel XeSS SDK (Intel Simplified Software License)
-are git submodules in `third_party/`; see
+SDKs license, NVIDIA build only), the AMD FidelityFX SDK (AMD FidelityFX
+License) and the Intel XeSS SDK (Intel Simplified Software License) are git
+submodules in `third_party/`; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). NVIDIA and DLSS are
-trademarks of NVIDIA Corporation, Intel and XeSS of Intel Corporation; EDAA
-is not sponsored or endorsed by NVIDIA or Intel.
+trademarks of NVIDIA Corporation, AMD, Radeon, FidelityFX and FSR of
+Advanced Micro Devices, Inc., Intel and XeSS of Intel Corporation; EDAA is
+not sponsored or endorsed by NVIDIA, AMD or Intel.

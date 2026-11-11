@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="ED-Overdrive – FSR experimentell" Width="900" Height="600" MinWidth="760" MinHeight="480"
-        Background="{StaticResource WindowBrush}" WindowStartupLocation="CenterScreen">
+        Background="{DynamicResource WindowBrush}" FontFamily="{DynamicResource AppFont}" WindowStartupLocation="CenterScreen">
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -15,7 +15,7 @@
 
         <DockPanel Grid.ColumnSpan="2" Margin="4,0,4,12" LastChildFill="False">
             <TextBlock DockPanel.Dock="Left" Text="ED-Overdrive" FontSize="16" FontWeight="SemiBold"/>
-            <Border DockPanel.Dock="Right" x:Name="GameStateBadge" CornerRadius="6" Padding="10,3">
+            <Border DockPanel.Dock="Right" x:Name="GameStateBadge" CornerRadius="{DynamicResource Corner}" Padding="10,3">
                 <TextBlock x:Name="GameStateText" FontSize="12"/>
             </Border>
         </DockPanel>
@@ -33,8 +33,8 @@
             <RadioButton Style="{StaticResource NavButton}" Content="Backups" Tag="backups" Checked="OnNavigate"/>
         </StackPanel>
 
-        <Border Grid.Row="1" Grid.Column="1" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}"
-                BorderThickness="1" CornerRadius="10" Padding="18,14">
+        <Border Grid.Row="1" Grid.Column="1" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="1" CornerRadius="{DynamicResource Corner}" Padding="18,14">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <ContentControl x:Name="PageHost"/>
             </ScrollViewer>
