@@ -23,7 +23,8 @@ static class OverviewPage
 
         var cards = new WrapPanel();
         var components = InstallInfo.Scan(game.Folder);
-        foreach (var c in components.Where(c => !c.Foreign)) {
+        // AMD build: no Streamline (edaa/docs/vendors.md).
+        foreach (var c in components.Where(c => !c.Foreign && (Vendor.Nvidia || c.Name != "Streamline"))) {
             var content = new StackPanel();
             content.Children.Add(Ui.Muted(c.Name, 2));
             content.Children.Add(Ui.Text(c.State == ComponentState.Installed ? c.Detail : "fehlt",
