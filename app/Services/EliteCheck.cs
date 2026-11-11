@@ -123,7 +123,7 @@ public sealed partial class EliteCheck(GameInstall game, string graphicsFolder)
         CheckFpsLimit(results);
         CheckSharpening(results);
 
-        results.Add(new(GroupLimiter, "NVIDIA-Treiber und NVIDIA App", CheckStatus.Info,
+        results.Add(new(GroupLimiter, Vendor.Amd ? "AMD Software (Adrenalin)" : "NVIDIA-Treiber und NVIDIA App", CheckStatus.Info,
             "Schärfe und Bildlimit dort kann die App noch nicht auslesen. Bitte bei Bedarf selbst nachsehen."));
     }
 
@@ -226,7 +226,12 @@ public sealed partial class EliteCheck(GameInstall game, string graphicsFolder)
 
         var gpus = GraphicsAdapters();
         var fit = gpus.FirstOrDefault(g => RtxSeries(g) >= 4);
-        results.Add(fit != null
+        if (Vendor.Amd) {
+            // AMD FSR Frame Generation runs on any card; no Streamline (edaa/docs/vendors.md).
+            results.Add(new(GroupFg, "Grafikkarte", CheckStatus.Info,
+                (gpus.Count > 0 ? string.Join(", ", gpus) : "Nicht erkannt") + ". AMD FSR Frame Generation läuft auf jeder Karte."));
+        }
+        else results.Add(fit != null
             ? new(GroupFg, "Grafikkarte", CheckStatus.Ok, $"{fit}, unterstützt DLSS Frame Generation.")
             : new(GroupFg, "Grafikkarte", problem, (gpus.Count > 0 ? string.Join(", ", gpus) : "Nicht erkannt") + ". Frame Generation braucht eine RTX 40 oder RTX 50."));
 
@@ -236,7 +241,7 @@ public sealed partial class EliteCheck(GameInstall game, string graphicsFolder)
             : new(GroupFg, "GPU-Planung (HAGS)", problem, "Aus oder nicht gesetzt. Einschalten unter Windows-Einstellungen → Anzeige → Grafik, danach neu starten."));
 
         var missing = StreamlineFiles.Where(f => !File.Exists(Path.Combine(game.Folder, f))).ToList();
-        results.Add(missing.Count == 0
+        if (Vendor.Nvidia) results.Add(missing.Count == 0
             ? new(GroupFg, "Streamline-Dateien", CheckStatus.Ok, "Vollständig.")
             : new(GroupFg, "Streamline-Dateien", problem, $"Es fehlen: {string.Join(", ", missing)}. Unter „Übersicht“ installieren."));
 

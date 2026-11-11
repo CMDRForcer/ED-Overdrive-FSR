@@ -348,7 +348,13 @@ float3 ps_sharpen(float4 pos : SV_Position) : SV_Target
 // only when what was added is at least half as bright as what was under it,
 // so faint glows do not cost it its history. Dilated by one pixel to cover the
 // edges once upscaled.
-float ps_hud_mask(float4 pos : SV_Position) : SV_Target
+struct hud_mask_output
+{
+    float changed : SV_Target0; // 1 where the HUD changed the pixel or a neighbour (frame generation, TAA upscaling)
+    float graded : SV_Target1; // 0..1: how much the HUD makes up the pixel (reactive mask of the upscalers)
+};
+
+hud_mask_output ps_hud_mask(float4 pos : SV_Position)
 {
     float changed = 0;
 
@@ -366,7 +372,21 @@ float ps_hud_mask(float4 pos : SV_Position) : SV_Target
     }
     // clang-format on
 
-    return changed;
+    // Graded, this pixel only: the HUD's share of the pixel. Bright text and lines
+    // (share near 1) keep no history in the upscaler; the faint tint of a panel's
+    // background (share just above the 1/3 of 'changed') keeps it, so the scene
+    // behind stays anti-aliased instead of flickering inside the panel rectangle.
+    const int3 c = int3(pos.xy, 0);
+    const float3 before = history_tex.Load(c).rgb;
+    const float3 diff = abs(scene_color.Load(c) - before);
+    const float added = max(diff.r, max(diff.g, diff.b));
+    const float under = max(before.r, max(before.g, before.b));
+    const float share = added / (added + under + 1e-4);
+
+    hud_mask_output o;
+    o.changed = changed;
+    o.graded = added > 0.004 ? smoothstep(0.34, 0.75, share) : 0;
+    return o;
 }
 
 
@@ -390,17 +410,54 @@ float ps_reactive(float4 pos : SV_Position) : SV_Target
 
 // Frame generation: the motion vectors with the cockpit HUD standing still
 // (the HUD keeps its place on screen while the scene moves behind it).
+// AMD frame generation with fg_amd_ship_still: the player's own ship stands still
+// too (t5, unbound otherwise: loads return 0).
 float2 ps_fg_motion(float4 pos : SV_Position) : SV_Target
 {
     const int3 p = int3(pos.xy, 0);
-    return hud_mask_tex.Load(p) > 0.5 ? float2(0, 0) : motion_tex.Load(p);
+    return hud_mask_tex.Load(p) > 0.5 || vehicle_mask_tex.Load(p) > 0.25 ? float2(0, 0) : motion_tex.Load(p);
 }
 
 
 // Frame generation with hud_motion: the HUD already has the cockpit's motion.
 float2 ps_fg_motion_keep(float4 pos : SV_Position) : SV_Target
 {
-    return motion_tex.Load(int3(pos.xy, 0));
+    const int3 p = int3(pos.xy, 0);
+    return vehicle_mask_tex.Load(p) > 0.25 ? float2(0, 0) : motion_tex.Load(p); // 0.4: AMD ship distance
+}
+
+
+// AMD frame generation, HUD layer (fg_amd_hud_ui, fg_amd_ship_ui): AMD's swap chain
+// draws it over every frame as lerp(frame, layer.rgb, layer.a). Colour = the real
+// frame (t0, display size), alpha = 1 where the cockpit HUD is this frame (t4) or
+// was last frame (t1.r), dilated by one pixel, or where the player's own ship is
+// (t5, moves with the camera), dilated by two; all masks render size, unbound = 0.
+// Real frames stay as they are; generated frames show the newest real HUD and ship.
+float4 ps_fg_hud_ui(float4 pos : SV_Position) : SV_Target
+{
+    uint mw, mh, ow, oh;
+    hud_mask_tex.GetDimensions(mw, mh);
+    scene_color.GetDimensions(ow, oh);
+    const int2 m = int2(pos.xy * float2(mw, mh) / float2(ow, oh));
+    float hud = 0;
+
+    // clang-format off
+    [unroll] for (int y = -1; y <= 1; ++y) {
+        [unroll] for (int x = -1; x <= 1; ++x) {
+            // Out of bounds (and unbound) loads return 0.
+            const int3 p = int3(m + int2(x, y), 0);
+            hud = max(hud, max(hud_mask_tex.Load(p), history_tex.Load(p).r));
+        }
+    }
+
+    [unroll] for (int v = -2; v <= 2; ++v) {
+        [unroll] for (int u = -2; u <= 2; ++u) {
+            hud = max(hud, vehicle_mask_tex.Load(int3(m + int2(u, v), 0)) > 0.25 ? 1.0 : 0.0); // 0.4: AMD ship distance
+        }
+    }
+    // clang-format on
+
+    return float4(scene_color.Load(int3(pos.xy, 0)), hud > 0.5 ? 1.0 : 0.0);
 }
 
 

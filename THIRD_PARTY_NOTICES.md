@@ -11,9 +11,10 @@ the app also copies them to `ED-Overdrive-Lizenzen` in the game folder when it i
 | NVIDIA Streamline (`sl.*.dll`) | 2.14.16 | https://github.com/NVIDIAGameWorks/Streamline | MIT / NVIDIA RTX SDKs License | `NVIDIA-Streamline-LICENSE.txt`, `NVIDIA-RTX-SDKs-LICENSE.txt` |
 | NVIDIA DLSS (`nvngx_dlss.dll`, `nvngx_dlssg.dll`) | 310.9.16 | https://github.com/NVIDIA/DLSS | NVIDIA RTX SDKs / NGX SDK License | `NVIDIA-RTX-SDKs-LICENSE.txt`, `NVIDIA-NGX-SDK-LICENSE.txt` |
 | Intel XeSS (`libxess.dll`) | – | https://github.com/intel/xess | Intel Simplified Software License | `Intel-XeSS-LICENSE.txt`, `Intel-XeSS-third-party-programs.txt` |
+| AMD FSR 4 / 3.1 and FSR Frame Generation (`amd_fidelityfx_loader_dx12.dll`, `amd_fidelityfx_upscaler_dx12.dll`, `amd_fidelityfx_framegeneration_dx12.dll`), experimental | FidelityFX SDK 2.4.0 (FSR 4.1.2 / 3.1.6) | https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK | AMD FidelityFX license (binary redistribution, no reverse engineering) | `AMD-FidelityFX-LICENSE.md` |
 | GITC Uplift | 1.8.0 | https://github.com/ghostinthecamera/GITC-Uplift | MIT | `GITC-Uplift-LICENSE.txt` |
 
-The NVIDIA and Intel binaries are distributed only as part of EDAA, unmodified, not as stand-alone products.
+The NVIDIA, Intel and AMD binaries are distributed only as part of EDAA, unmodified, not as stand-alone products.
 
 ## Downloaded at setup, not shipped
 

@@ -51,7 +51,8 @@ static class FilterPage
         }
 
         var cards = new WrapPanel();
-        foreach (var variant in Enum.GetValues<FilterVariant>()) {
+        // AMD build: no DLSS 5 (edaa/docs/vendors.md).
+        foreach (var variant in Enum.GetValues<FilterVariant>().Where(v => Vendor.Nvidia || v != FilterVariant.Dlss5)) {
             var content = new StackPanel();
             content.Children.Add(Ui.Text(Name(variant)));
             content.Children.Add(Ui.Muted(FilterService.Describe(variant), 8));

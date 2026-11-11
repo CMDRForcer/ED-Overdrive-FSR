@@ -25,6 +25,7 @@ namespace edaa::fg
     {
         bool d3d12_path = false; // presenting through the D3D12 swap chain
         bool streamline = false; // Streamline loaded (DLSS-G and Reflex available)
+        bool amd = false; // AMD FSR Frame Generation instead (experimental, EDAA's own frame limiter)
         bool generating = false; // DLSS-G on and adding frames
         bool background = false; // the game is not the foreground window (DLSS-G pauses)
         bool waiting = false; // no scene from EDAA (menus, maps, loading): DLSS-G pauses
@@ -46,5 +47,14 @@ namespace edaa::fg
 
     // passes.cpp, at Present: rewrite 'target' (the shared motion vectors) with
     // the cockpit HUD standing still, from this frame's HUD mask. False if none.
-    bool apply_hud_motion(ID3D11DeviceContext* ctx, ID3D11Texture2D* target);
+    // 'ship_still' (AMD, fg_amd_ship_still): the player's own ship stands still too,
+    // also in frames without a HUD mask. True if the HUD mask was applied.
+    bool apply_hud_motion(ID3D11DeviceContext* ctx, ID3D11Texture2D* target, bool ship_still);
+
+    // passes.cpp, at Present, before apply_hud_motion: AMD frame generation's HUD
+    // layer in 'target' (back buffer size and format): the back buffer where the
+    // cockpit HUD is this frame or was last frame, transparent elsewhere. False if
+    // there is nothing to draw this frame ('target' is left as it was). 'hud' and
+    // 'ship' choose the masks: cockpit HUD, player's own ship.
+    bool build_hud_layer(ID3D11DeviceContext* ctx, ID3D11Texture2D* back_buffer, DXGI_FORMAT view_format, ID3D11Texture2D* target, bool hud, bool ship);
 }

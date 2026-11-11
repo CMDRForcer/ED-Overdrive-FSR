@@ -25,7 +25,8 @@ add_custom_command(
 	COMMAND ${FXC} /nologo /O3 /T ps_5_0 /E ps_motion /Vn g_ps_motion /Fh ${SHADER_OUT}/ps_motion.h ${SHADER_SRC}
 	COMMAND ${FXC} /nologo /O3 /T ps_5_0 /E ps_debug /Vn g_ps_debug /Fh ${SHADER_OUT}/ps_debug.h ${SHADER_SRC}
 	COMMAND ${FXC} /nologo /O3 /T ps_5_0 /E ps_hud_motion /Vn g_ps_hud_motion /Fh ${SHADER_OUT}/ps_hud_motion.h ${SHADER_SRC}
-	COMMAND ${CMAKE_COMMAND} -DOUT=${SHADER_HEADER} -DHEADERS=vs_fullscreen.h,ps_motion.h,ps_debug.h,ps_hud_motion.h -P ${CMAKE_SOURCE_DIR}/addon/shaders/combine.cmake
+	COMMAND ${FXC} /nologo /O3 /T ps_5_0 /E ps_ship_auto /Vn g_ps_ship_auto /Fh ${SHADER_OUT}/ps_ship_auto.h ${SHADER_SRC}
+	COMMAND ${CMAKE_COMMAND} -DOUT=${SHADER_HEADER} -DHEADERS=vs_fullscreen.h,ps_motion.h,ps_debug.h,ps_hud_motion.h,ps_ship_auto.h -P ${CMAKE_SOURCE_DIR}/addon/shaders/combine.cmake
 	DEPENDS ${SHADER_SRC} ${CMAKE_SOURCE_DIR}/addon/shaders/combine.cmake
 	COMMENT "Compiling motion.hlsl"
 )
@@ -42,7 +43,8 @@ add_custom_command(
 	COMMAND ${FXC} /nologo /O3 /T ps_5_0 /E ps_fg_motion /Vn g_ps_fg_motion /Fh ${SHADER_OUT}/ps_fg_motion.h ${TAA_SRC}
 	COMMAND ${FXC} /nologo /O3 /T ps_5_0 /E ps_fg_motion_keep /Vn g_ps_fg_motion_keep /Fh ${SHADER_OUT}/ps_fg_motion_keep.h ${TAA_SRC}
 	COMMAND ${FXC} /nologo /O3 /T ps_5_0 /E ps_reactive /Vn g_ps_reactive /Fh ${SHADER_OUT}/ps_reactive.h ${TAA_SRC}
-	COMMAND ${CMAKE_COMMAND} -DOUT=${TAA_HEADER} -DHEADERS=ps_taa.h,ps_copy.h,ps_hud_mask.h,ps_taau.h,ps_sharpen.h,ps_fg_motion.h,ps_fg_motion_keep.h,ps_reactive.h -P ${CMAKE_SOURCE_DIR}/addon/shaders/combine.cmake
+	COMMAND ${FXC} /nologo /O3 /T ps_5_0 /E ps_fg_hud_ui /Vn g_ps_fg_hud_ui /Fh ${SHADER_OUT}/ps_fg_hud_ui.h ${TAA_SRC}
+	COMMAND ${CMAKE_COMMAND} -DOUT=${TAA_HEADER} -DHEADERS=ps_taa.h,ps_copy.h,ps_hud_mask.h,ps_taau.h,ps_sharpen.h,ps_fg_motion.h,ps_fg_motion_keep.h,ps_reactive.h,ps_fg_hud_ui.h -P ${CMAKE_SOURCE_DIR}/addon/shaders/combine.cmake
 	DEPENDS ${TAA_SRC} ${CMAKE_SOURCE_DIR}/addon/shaders/combine.cmake
 	COMMENT "Compiling taa.hlsl"
 )
@@ -82,6 +84,7 @@ add_library(edaa SHARED
 	addon/src/settings.cpp
 	addon/src/dlss.cpp
 	addon/src/xess.cpp
+	addon/src/fsr.cpp
 	addon/src/fg_present.cpp
 	addon/src/gpu_profiler.cpp
 	addon/edaa.rc
@@ -100,9 +103,21 @@ target_compile_definitions(edaa PRIVATE EDAA_DEVELOPER=$<IF:$<OR:$<BOOL:${EDAA_D
 # NVIDIA DLSS (DLAA): built in when the SDK submodule third_party/dlss is checked out.
 # The submodule only references NVIDIA's repository: the SDK itself is shipped
 # only inside the application (static lib + release DLL), as its license requires.
+# Vendor build (edaa/docs/vendors.md): every build carries what runs on that vendor's
+# cards. -DEDAA_VENDOR=amd leaves out DLSS, DLSS-G and Reflex (NVIDIA only).
+set(EDAA_VENDOR "nvidia" CACHE STRING "Vendor build: nvidia or amd")
+set_property(CACHE EDAA_VENDOR PROPERTY STRINGS nvidia amd)
+if(EDAA_VENDOR STREQUAL "amd")
+	target_compile_definitions(edaa PRIVATE EDAA_VENDOR_AMD=1)
+	message(STATUS "AMD build: without DLSS, DLSS-G and Reflex")
+elseif(EDAA_VENDOR STREQUAL "nvidia")
+	target_compile_definitions(edaa PRIVATE EDAA_VENDOR_AMD=0)
+else()
+	message(FATAL_ERROR "EDAA_VENDOR must be nvidia or amd")
+endif()
 option(EDAA_WITH_DLSS "Build with NVIDIA DLSS when the SDK is present" ON)
 set(DLSS_DIR ${CMAKE_SOURCE_DIR}/third_party/dlss)
-if(EDAA_WITH_DLSS AND EXISTS ${DLSS_DIR}/include/nvsdk_ngx_helpers.h)
+if(EDAA_WITH_DLSS AND NOT EDAA_VENDOR STREQUAL "amd" AND EXISTS ${DLSS_DIR}/include/nvsdk_ngx_helpers.h)
 	target_include_directories(edaa SYSTEM PRIVATE ${DLSS_DIR}/include)
 	set(DLSS_LIB ${DLSS_DIR}/lib/Windows_x86_64/x64)
 	target_link_libraries(edaa PRIVATE $<IF:$<CONFIG:Debug>,${DLSS_LIB}/nvsdk_ngx_s_dbg.lib,${DLSS_LIB}/nvsdk_ngx_s.lib>)
@@ -131,12 +146,34 @@ else()
 	target_compile_definitions(edaa PRIVATE EDAA_XESS=0)
 	message(STATUS "Building without XeSS (EDAA_WITH_XESS off or SDK not in third_party/xess)")
 endif()
+# AMD FSR 4 / 3.1 (experimental, Native AA and upscaling through a D3D12 bridge):
+# built in when the FidelityFX SDK submodule third_party/fidelityfx is checked out.
+# Headers only: amd_fidelityfx_loader_dx12.dll is loaded at run time from the
+# add-on folder and picks FSR 4 or 3.1 from amd_fidelityfx_upscaler_dx12.dll
+# (AMD's signed DLLs, shipped next to EDAA.addon64).
+option(EDAA_WITH_FSR "Build with AMD FSR when the FidelityFX SDK is present" ON)
+set(FFX_DIR ${CMAKE_SOURCE_DIR}/third_party/fidelityfx/Kits/FidelityFX)
+if(EDAA_WITH_FSR AND EXISTS ${FFX_DIR}/upscalers/include/ffx_upscale.h)
+	target_include_directories(edaa SYSTEM PRIVATE ${FFX_DIR}/api/include ${FFX_DIR}/upscalers/include ${FFX_DIR}/framegeneration/include)
+	target_link_libraries(edaa PRIVATE d3d12.lib delayimp.lib)
+	target_link_options(edaa PRIVATE /DELAYLOAD:d3d12.dll)
+	target_compile_definitions(edaa PRIVATE EDAA_FSR=1)
+	add_custom_command(TARGET edaa POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			${FFX_DIR}/signedbin/amd_fidelityfx_loader_dx12.dll
+			${FFX_DIR}/signedbin/amd_fidelityfx_upscaler_dx12.dll
+			${FFX_DIR}/signedbin/amd_fidelityfx_framegeneration_dx12.dll
+			$<TARGET_FILE_DIR:edaa>)
+else()
+	target_compile_definitions(edaa PRIVATE EDAA_FSR=0)
+	message(STATUS "Building without FSR (EDAA_WITH_FSR off or SDK not in third_party/fidelityfx)")
+endif()
 # NVIDIA Streamline (DLSS Frame Generation, experimental): headers only, the DLLs
 # are loaded at run time from the add-on folder. third_party/streamline is the
 # extracted SDK zip (CI downloads it); the DLLs are shipped next to EDAA.addon64.
 option(EDAA_WITH_STREAMLINE "Build with NVIDIA Streamline when the SDK is present" ON)
 set(SL_DIR ${CMAKE_SOURCE_DIR}/third_party/streamline)
-if(EDAA_WITH_STREAMLINE AND EXISTS ${SL_DIR}/include/sl_dlss_g.h)
+if(EDAA_WITH_STREAMLINE AND NOT EDAA_VENDOR STREQUAL "amd" AND EXISTS ${SL_DIR}/include/sl_dlss_g.h)
 	target_include_directories(edaa SYSTEM PRIVATE ${SL_DIR}/include)
 	target_compile_definitions(edaa PRIVATE EDAA_SL=1)
 	# Production Streamline DLLs and the DLSS-G library next to EDAA.addon64.

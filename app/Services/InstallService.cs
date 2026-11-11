@@ -26,9 +26,11 @@ public sealed class InstallService(GameInstall game, Action<string> log)
     const string DevBranch = "builds/main"; // CI build of every push to main, before the next release
     const string AddonName = "EDAA.addon64";
 
+    // AMD build: no NVIDIA DLLs in the package (edaa/docs/vendors.md).
     static readonly string[] PackageFiles = [
-        AddonName, "nvngx_dlss.dll", "nvngx_dlssg.dll", "libxess.dll",
-        "sl.common.dll", "sl.dlss_g.dll", "sl.interposer.dll", "sl.pcl.dll", "sl.reflex.dll",
+        AddonName, "libxess.dll",
+        "amd_fidelityfx_loader_dx12.dll", "amd_fidelityfx_upscaler_dx12.dll", "amd_fidelityfx_framegeneration_dx12.dll",
+        .. (Vendor.Nvidia ? new[] { "nvngx_dlss.dll", "nvngx_dlssg.dll", "sl.common.dll", "sl.dlss_g.dll", "sl.interposer.dll", "sl.pcl.dll", "sl.reflex.dll" } : Array.Empty<string>()),
     ];
     static readonly string[] DevFiles = [
         AddonName, "streamline/nvngx_dlssg.dll", "streamline/sl.common.dll", "streamline/sl.dlss_g.dll",
@@ -69,7 +71,7 @@ public sealed class InstallService(GameInstall game, Action<string> log)
                 var entry = zip.GetEntry(name) ?? throw new InvalidDataException($"{name} fehlt im Paket.");
                 entry.ExtractToFile(Path.Combine(game.Folder, name), overwrite: true);
             }
-            // The licenses of everything the package brings (EDAA, ReShade, Streamline, DLSS, XeSS, ImGui).
+            // The licenses of everything the package brings (EDAA, ReShade, Streamline, DLSS, XeSS, AMD FidelityFX, ImGui).
             var licenses = Path.Combine(game.Folder, LicenseFolder);
             Directory.CreateDirectory(licenses);
             foreach (var entry in zip.Entries.Where(e => e.Name.Length > 0 &&
@@ -78,7 +80,9 @@ public sealed class InstallService(GameInstall game, Action<string> log)
                 entry.ExtractToFile(Path.Combine(licenses, name), overwrite: true);
             }
         }
-        log($"EDAA {BundledEdaa} installiert (DLAA, XeSS, Streamline), aus der App. Lizenzen in „{LicenseFolder}“.");
+        log(Vendor.Amd
+            ? $"EDAA {BundledEdaa} für AMD installiert (AMD FSR und FSR FG experimentell, XeSS), aus der App. Lizenzen in „{LicenseFolder}“."
+            : $"EDAA {BundledEdaa} installiert (DLAA, XeSS, AMD FSR experimentell, Streamline), aus der App. Lizenzen in „{LicenseFolder}“.");
 
         if (dev != null) {
             foreach (var file in Directory.EnumerateFiles(dev.Value.Folder)) {
@@ -202,10 +206,20 @@ public sealed class InstallService(GameInstall game, Action<string> log)
             ini.Set("OVERLAY", "TutorialProgress", "4");
         }
 
+        // Radeon (or the AMD build): AMD FSR (FSR 4 on RX 6000 and newer) instead of DLSS, which would fall back to the TAA there.
+        var amd = Vendor.Amd || GpuInfo.PrimaryVendor() == GpuVendor.Amd;
         foreach (var (key, value) in Defaults) {
             if (clean || ini.Get("EDAA", key) == null) {
-                ini.Set("EDAA", key, value);
+                ini.Set("EDAA", key, key == "aa_method" && amd ? "3" : value);
             }
+        }
+        // Radeon has no DLSS-G: AMD FSR Frame Generation.
+        if (amd && (clean || ini.Get("EDAA", "fg_backend") == null)) {
+            ini.Set("EDAA", "fg_backend", "1");
+        }
+        if (amd) {
+            log(Vendor.Amd ? "Kantenglättung und Frame Generation mit AMD FSR (experimentell)."
+                : "AMD-Grafikkarte erkannt: Kantenglättung und Frame Generation mit AMD FSR (experimentell).");
         }
         ini.Save(path);
         log(clean ? "ReShade.ini mit Standardwerten neu angelegt." : "ReShade.ini ergänzt (deine Werte bleiben).");

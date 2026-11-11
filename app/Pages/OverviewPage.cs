@@ -60,11 +60,11 @@ static class OverviewPage
 
         var channel = new ComboBox { Width = 230, Margin = new Thickness(0, 14, 0, 0), HorizontalAlignment = HorizontalAlignment.Left };
         channel.Items.Add($"Stabil (EDAA {InstallService.BundledEdaa}, in der App)");
-        channel.Items.Add("Entwicklung (neuester Build aus main)");
-        channel.SelectedIndex = AppSettings.LoadChannel() == Channel.Development ? 1 : 0;
-        channel.SelectionChanged += (_, _) => AppSettings.SaveChannel(channel.SelectedIndex == 1 ? Channel.Development : Channel.Stable);
+        // Experimental FSR build: no development channel, it would install the public builds/main without FSR.
+        channel.SelectedIndex = 0;
+        channel.IsEnabled = false;
         page.Children.Add(channel);
-        Channel Selected() => channel.SelectedIndex == 1 ? Channel.Development : Channel.Stable;
+        Channel Selected() => Channel.Stable;
 
         page.Children.Add(Ui.Buttons(
             Ui.Button("Installieren / Aktualisieren", (_, _) => InstallDialog.Run(window, game, Selected(), clean: false), primary: true),

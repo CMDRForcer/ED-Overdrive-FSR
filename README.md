@@ -1,4 +1,11 @@
-# ED-Overdrive
+# ED-Overdrive – FSR experimentell
+
+> **Experimenteller Zweig (privat).** Diese Fassung bringt zusätzlich **AMD FSR 4 / 3.1** als Methode in EDAA:
+> FSR 4 auf Radeon RX 6000 und neuer, auf allen anderen Karten (auch NVIDIA) FSR 3.1 – die Wahl trifft AMDs DLL.
+> Dazu **AMD FSR Frame Generation** als zweites FG-Verfahren (läuft auf jeder D3D12-Karte, eigenes Bildlimit statt Reflex).
+> Auf Radeon-Karten stellt die App FSR und FSR FG automatisch ein.
+> Die exe heißt `ED-Overdrive-FSR.exe`, der Kanal „Entwicklung“ ist hier abgeschaltet. FSR 4 ist bisher nicht auf
+> einer Radeon getestet.
 
 Einrichtungs-Programm für **Elite Dangerous Odyssey** (DX11): installiert und pflegt
 [EDAA](edaa) – Kantenglättung (NVIDIA DLAA, Intel XeSS, TAA) und echte
@@ -15,6 +22,7 @@ herunterladen und starten. Die App bringt .NET mit.
 | EDAA (Add-on, Quellcode in [`edaa/`](edaa)) | ✅ | MIT |
 | NVIDIA Streamline, DLSS (Super Resolution, Frame Generation) | ✅ als Teil von EDAA | NVIDIA RTX SDK / NGX SDK |
 | Intel XeSS | ✅ als Teil von EDAA | Intel Simplified Software License |
+| AMD FSR 4 / 3.1 und FSR Frame Generation (FidelityFX SDK 2.4.0, signierte AMD-DLLs) | ✅ als Teil von EDAA | AMD FidelityFX License (nur als Binärdatei, kein Reverse Engineering) |
 | GITC Uplift 1.8.0 (DLSS 5) | ✅ | MIT |
 | Filter-Shader (Deband, CAS, Vibrance, Fake-HDR, LUT, LocalContrast, Schwarzwert-Fix …) | ❌ werden beim Einrichten aus den Original-Repos der Autoren geladen | MIT, CC0, GPL-3.0 (je Shader) |
 | qUINT (MXAO, Bloom, DOF) | ❌ optionaler Download | „All rights reserved“, darf nicht mitgeliefert werden |
@@ -30,7 +38,7 @@ Installation von Hand (siehe [`edaa/README.md`](edaa/README.md)). Alle Lizenztex
 
 - Windows 10/11, 64 Bit
 - Elite Dangerous Odyssey (Steam, Epic oder Frontier) im DX11-Modus
-- Für DLAA/DLSS: NVIDIA RTX. Für Frame Generation: **RTX 40/50**. XeSS und TAA laufen auf jeder DX11-Karte.
+- Für DLAA/DLSS: NVIDIA RTX. Für Frame Generation: **RTX 40/50**. XeSS und TAA laufen auf jeder DX11-Karte, AMD FSR (3.1) auf jeder Karte mit D3D12.
 - Für DLSS 5: die passende `nvngx_dlssnr.dll` (RTX 50: NVIDIA-Original; RTX 20/30/40: angepasster Community-Build,
   unsigniert, auf eigenes Risiko)
 
@@ -106,6 +114,7 @@ cd ED-Overdrive
    cmake -S edaa -B edaa/build -G "Visual Studio 17 2022" -A x64
    cmake --build edaa/build --config Release
    ```
+   AMD FSR kommt aus dem Submodul `edaa/third_party/fidelityfx` (FidelityFX SDK 2.4.0).
    Für Frame Generation vorher das [Streamline SDK 2.14.16](https://github.com/NVIDIA-RTX/Streamline/releases/tag/v2.14.16)
    nach `edaa/third_party/streamline` entpacken.
 2. **App:**
@@ -125,5 +134,6 @@ steht in `edaa/VERSION`.
 
 ED-Overdrive steht unter der [MIT-Lizenz](LICENSE). EDAA (MIT, Siegfried Origin) und alle mitgelieferten Teile
 behalten ihre eigenen Lizenzen, siehe [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). NVIDIA, DLSS und
-GeForce RTX sind Marken der NVIDIA Corporation, Intel und XeSS der Intel Corporation, Elite Dangerous von
+GeForce RTX sind Marken der NVIDIA Corporation, Intel und XeSS der Intel Corporation, AMD, FidelityFX und FSR
+der Advanced Micro Devices, Inc., Elite Dangerous von
 Frontier Developments. ED-Overdrive ist kein offizielles Produkt dieser Firmen.

@@ -318,6 +318,22 @@ limitations under the License.
   Intel and XeSS are trademarks of Intel Corporation; EDAA is not sponsored
   or endorsed by Intel.
 
+## AMD FidelityFX SDK (FSR 4 / 3.1, experimental)
+
+- Used for: AMD FSR Native AA and upscaling (`amd_fidelityfx_loader_dx12.dll`,
+  loaded at run time by `EDAA.addon64`, `amd_fidelityfx_upscaler_dx12.dll` and
+  `amd_fidelityfx_framegeneration_dx12.dll` for FSR Frame Generation;
+  FidelityFX SDK 2.4.0, FSR 4.1.2 with FSR 3.1.6 fallback). The DLLs are AMD's
+  signed binaries, shipped unmodified; API headers under the MIT license.
+- License: AMD FidelityFX license (`licenses/AMD-FidelityFX-LICENSE.md`):
+  redistribution in binary form only, no reverse engineering, decompilation
+  or disassembly; the copyright notice, permission notice and disclaimers
+  must be reproduced.
+- Source: https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK
+- Copyright (C) Advanced Micro Devices, Inc. All rights reserved. AMD,
+  FidelityFX and FSR are trademarks of Advanced Micro Devices, Inc.; EDAA is
+  not sponsored or endorsed by AMD.
+
 ## ReShade (add-on API headers, v6.8.0)
 
 - License: BSD 3-Clause (`licenses/ReShade-LICENSE.md`).

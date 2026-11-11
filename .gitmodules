@@ -14,3 +14,7 @@
 	path = edaa/third_party/xess
 	url = https://github.com/intel/xess.git
 	shallow = true
+[submodule "edaa/third_party/fidelityfx"]
+	path = edaa/third_party/fidelityfx
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK.git
+	shallow = true

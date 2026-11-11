@@ -10,6 +10,7 @@
         <SolidColorBrush x:Key="TextBrush" Color="#E8EAF0"/>
         <SolidColorBrush x:Key="MutedBrush" Color="#9AA1B2"/>
         <SolidColorBrush x:Key="AccentBrush" Color="#F07B22"/>
+        <SolidColorBrush x:Key="AccentTextBrush" Color="#16181D"/>
         <SolidColorBrush x:Key="OkBrush" Color="#5BC48A"/>
         <SolidColorBrush x:Key="WarnBrush" Color="#E8B44A"/>
 
@@ -43,7 +44,7 @@
         <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
             <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
-            <Setter Property="Foreground" Value="#16181D"/>
+            <Setter Property="Foreground" Value="{StaticResource AccentTextBrush}"/>
         </Style>
 
         <Style x:Key="NavButton" TargetType="RadioButton">

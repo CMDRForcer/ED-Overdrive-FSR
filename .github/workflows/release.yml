@@ -1,5 +1,6 @@
 # A published release (tag vX.Y.Z on main): build the add-on and the app with the add-on inside,
-# then attach ED-Overdrive.exe and EDAA-<version>.zip (for installing by hand) to the release.
+# then attach ED-Overdrive-FSR.exe (NVIDIA), ED-Overdrive-AMD.exe and the EDAA zips (for installing by
+# hand) to the release. Vendor builds: edaa/docs/vendors.md.
 name: Release
 
 on:
@@ -35,6 +36,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           ./edaa/tools/bundle.ps1 -Release edaa/build/Release -Out app/ThirdParty/EDAA.zip -Version $v
           Copy-Item app/ThirdParty/EDAA.zip "EDAA-$v.zip"
+          cmake -S edaa -B edaa/build-amd -G "Visual Studio 17 2022" -A x64 "-DEDAA_VERSION=$v" -DEDAA_VENDOR=amd
+          cmake --build edaa/build-amd --config Release
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          ./edaa/tools/bundle.ps1 -Release edaa/build-amd/Release -Out app/ThirdParty/EDAA-amd.zip -Version $v -Vendor amd
+          Copy-Item app/ThirdParty/EDAA-amd.zip "EDAA-$v-amd.zip"
           "version=$v" >> $env:GITHUB_OUTPUT
 
       - uses: actions/setup-dotnet@v4
@@ -46,13 +52,17 @@ jobs:
         run: |
           $version = '0.0.0'
           if ($env:TAG -match '^v?(\d+\.\d+\.\d+)') { $version = $Matches[1] }
-          dotnet publish app/GenFrame.Setup.csproj -p:PublishProfile=Release -p:Version=$version
+          dotnet publish app/GenFrame.Setup.csproj -p:PublishProfile=Release -p:Version=$version -p:Vendor=nvidia
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Remove-Item -Recurse -Force app/obj
+          dotnet publish app/GenFrame.Setup.csproj -p:PublishProfile=Release -p:Version=$version -p:Vendor=amd
+          if ($LASTEXITCODE -ne 0) { exit 1 }
         env:
           TAG: ${{ github.event.release.tag_name }}
 
       - name: Attach to the release
         shell: pwsh
-        run: gh release upload "$env:TAG" app/bin/publish/ED-Overdrive.exe "EDAA-${{ steps.edaa.outputs.version }}.zip" --clobber
+        run: gh release upload "$env:TAG" app/bin/publish/ED-Overdrive-FSR.exe app/bin/publish/ED-Overdrive-AMD.exe "EDAA-${{ steps.edaa.outputs.version }}.zip" "EDAA-${{ steps.edaa.outputs.version }}-amd.zip" --clobber
         env:
           TAG: ${{ github.event.release.tag_name }}
           GH_TOKEN: ${{ github.token }}

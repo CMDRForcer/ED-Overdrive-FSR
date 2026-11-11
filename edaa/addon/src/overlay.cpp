@@ -9,6 +9,7 @@
 #include "fg.hpp"
 #include "gpu_profiler.hpp"
 #include "xess.hpp"
+#include "fsr.hpp"
 #include "state.hpp"
 
 #include <cstdio>
@@ -56,10 +57,11 @@ namespace edaa
             }
 
             const bool use_xess = used == upscaler::xess;
+            const bool use_fsr = used == upscaler::fsr;
             edit(ImGui::Checkbox("HUD mask (cockpit HUD from the current frame: no trails)", &s.config.upscale_hud_mask));
             edit(ImGui::Checkbox("Texture mip bias (display resolution texture detail)", &s.config.upscale_mip_bias));
-            ImGui::Text("Upscaling (%s): %s", use_xess ? "XeSS" : used == upscaler::taa ? "EDAA TAA"
-                                                                                        : "DLSS",
+            ImGui::Text("Upscaling (%s): %s", use_xess ? "XeSS" : use_fsr ? "AMD FSR" : used == upscaler::taa ? "EDAA TAA"
+                                                                                                          : "DLSS",
                 s.upscale_status);
             ImGui::Text("Jitter: %d phases, texture LOD bias %+.2f", s.jitter_phases, s.mip_bias_value.load());
 
@@ -69,7 +71,7 @@ namespace edaa
                 return;
             }
 
-            const upscale_info info = use_xess ? xess::info() : dlss::info();
+            const upscale_info info = use_xess ? xess::info() : use_fsr ? fsr::info() : dlss::info();
 
             if (info.modes.empty()) {
                 return;
@@ -78,7 +80,7 @@ namespace edaa
             // Each mode's range comes from the API for this display size. The game
             // picks the render size: its supersampling should fall in the range.
             if (ImGui::BeginTable("modes", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_SizingFixedFit)) {
-                ImGui::TableSetupColumn(use_xess ? "XeSS preset" : "DLSS mode");
+                ImGui::TableSetupColumn(use_xess ? "XeSS preset" : use_fsr ? "FSR mode" : "DLSS mode");
                 ImGui::TableSetupColumn("Optimal");
                 ImGui::TableSetupColumn("Accepted render sizes");
                 ImGui::TableSetupColumn("Scale");
@@ -119,8 +121,11 @@ namespace edaa
             };
             const choice choices[] = {
                 { aa_method::taa, "EDAA TAA", 1 },
+#if !EDAA_VENDOR_AMD
                 { aa_method::dlaa, "NVIDIA DLSS", dlss::availability() },
+#endif
                 { aa_method::xess, "Intel XeSS", xess::availability() },
+                { aa_method::fsr, "AMD FSR (experimental)", fsr::availability() },
             };
             // A saved method that cannot run is replaced by the TAA (passes.cpp).
             // The same choice sets the upscaler used below 1x (sync_upscaler).
@@ -206,6 +211,23 @@ namespace edaa
             else if (s.config.aa_method == static_cast<int>(aa_method::xess) && (EDAA_DEVELOPER || xess::availability() == 1)) {
                 ImGui::Text("XeSS: %s", xess::status().c_str());
             }
+            else if (s.config.aa_method == static_cast<int>(aa_method::fsr) && (EDAA_DEVELOPER || fsr::availability() == 1)) {
+                // FSR 4 on the Radeon GPUs AMD's DLL supports, FSR 3.1 elsewhere (AMD's choice).
+                const std::string fsr_version = fsr::version();
+                ImGui::Text("FSR: %s", fsr::status().c_str());
+                ImGui::Text("Version: %s (experimental)", fsr_version.empty() ? "unknown" : fsr_version.c_str());
+                edit(ImGui::SliderFloat("FSR sharpening (0 = off)", &s.config.fsr_sharpness, 0.0f, 1.0f, "%.2f"));
+                const float fsr_sharpness_default = settings{}.fsr_sharpness;
+                ImGui::SameLine();
+                ImGui::BeginDisabled(s.config.fsr_sharpness == fsr_sharpness_default);
+
+                if (ImGui::SmallButton("Reset##fsr_sharpness")) {
+                    s.config.fsr_sharpness = fsr_sharpness_default;
+                    edit.changed = true;
+                }
+
+                ImGui::EndDisabled();
+            }
 
             draw_upscaling(s, edit);
 
@@ -219,7 +241,7 @@ namespace edaa
 
             if (ImGui::Button("Reset to defaults")) {
                 s.config = settings{};
-                s.pick_method = true; // DLSS, else XeSS, else TAA
+                s.pick_method = true; // DLSS, else FSR, else XeSS, else TAA
                 edit.changed = true;
             }
         }
@@ -231,7 +253,8 @@ namespace edaa
             // runs (its upscaling uses part of it), DLSS/XeSS have none.
             const bool below = s.render_w != 0 && s.render_w < s.back_buffer_w;
             const bool neural = (s.config.aa_method == static_cast<int>(aa_method::dlaa) && dlss::availability() == 1) ||
-                (s.config.aa_method == static_cast<int>(aa_method::xess) && xess::availability() == 1);
+                (s.config.aa_method == static_cast<int>(aa_method::xess) && xess::availability() == 1) ||
+                (s.config.aa_method == static_cast<int>(aa_method::fsr) && fsr::availability() == 1);
             const bool taau = s.upscaling_active && s.upscaler_used == static_cast<int>(upscaler::taa);
             const bool taa = !s.upscaling_active && !neural;
 
@@ -424,7 +447,7 @@ namespace edaa
             ImGui::Separator();
             ImGui::TextUnformatted("Debug views (Ctrl+Shift+M)");
             edit(ImGui::Checkbox("Generate motion vectors", &s.config.motion_enabled));
-            ImGui::Combo("Debug view", &s.config.debug, "Off\0Motion vectors\0Vehicle mask\0Depth\0History rejection\0Moving objects\0Temporal change (flicker)\0HUD mask (upscaling)\0Reactive mask (DLSS)\0");
+            ImGui::Combo("Debug view", &s.config.debug, "Off\0Motion vectors\0Vehicle mask\0Depth\0History rejection\0Moving objects\0Temporal change (flicker)\0HUD mask (upscaling)\0Reactive mask (DLSS)\0Ship auto (green: detected, orange: stencil only)\0");
             edit(ImGui::SliderFloat("Colour saturation (px)", &s.config.debug_motion_pixels, 1.0f, 64.0f, "%.0f"));
 
             ImGui::Separator();
@@ -489,21 +512,60 @@ namespace edaa
 
     namespace
     {
-        // DLSS Frame Generation (fg_present.cpp): on/off, frame limit, status.
+        // Frame generation (fg_present.cpp): NVIDIA DLSS-G or AMD FSR FG, on/off, frame limit, status.
         void draw_frame_generation(addon_state& s, change_tracker& edit)
         {
             const fg::status st = fg::get_status();
 
-            if (edit(ImGui::Checkbox("DLSS Frame Generation (RTX 40/50, 2x)", &s.config.fg_generate)) && s.config.fg_generate) {
+            if (edit(ImGui::Checkbox("Frame Generation (2x)", &s.config.fg_generate)) && s.config.fg_generate) {
                 s.config.fg_present_test = true; // the D3D12 swap chain it needs
             }
 
+#if EDAA_VENDOR_AMD
+            ImGui::TextUnformatted("Frame generation by AMD FSR Frame Generation (experimental)");
+#else
+            // Read at game start: changing it here takes effect after a restart (no rebuild while playing).
+            const char* backends[] = { "NVIDIA DLSS-G (RTX 40/50)", "AMD FSR Frame Generation (experimental, any GPU)" };
+            int backend = s.config.fg_backend == 1 ? 1 : 0;
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18);
+
+            if (ImGui::Combo("Frame generation by", &backend, backends, 2) && backend != s.config.fg_backend) {
+                s.config.fg_backend = backend;
+                edit(true);
+            }
+#endif
+
+            const bool running_amd = st.amd, running_nv = st.streamline;
+
+            if ((s.config.fg_backend == 1 && running_nv) || (s.config.fg_backend == 0 && running_amd)) {
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "Restart the game to switch the frame generation.");
+            }
+
             edit(ImGui::Checkbox("Keep the cockpit HUD steady (no smearing in generated frames)", &s.config.fg_hud_protect));
+
+            if (s.config.fg_backend == 1) {
+                edit(ImGui::Checkbox("AMD: cockpit HUD from the newest real frame (no double HUD)", &s.config.fg_amd_hud_ui));
+                edit(ImGui::Checkbox("AMD: own ship from the newest real frame (no flicker on the hull)", &s.config.fg_amd_ship_ui));
+                edit(ImGui::Checkbox("AMD: own ship without motion (no hull flicker, no panel ghosts)", &s.config.fg_amd_ship_still));
+
+                if (s.config.fg_amd_ship_ui || s.config.fg_amd_ship_still) {
+                    edit(ImGui::Checkbox("AMD: detect own ship automatically (learns while flying)", &s.config.fg_amd_ship_auto));
+                    edit(ImGui::SliderFloat("AMD: own ship up to (m, 0 = cockpit only)", &s.config.fg_amd_ship_distance, 0.0f, 150.0f, "%.0f"));
+                    ImGui::TextDisabled("Outer hull and nose: about the visible ship length. Closer terrain stands still for AMD too.");
+                }
+
+                edit(ImGui::Checkbox("AMD: debug view in generated frames (diagnosis)", &s.config.fg_amd_debug_view));
+                ImGui::Checkbox("AMD: only generated frames (diagnosis, half frame rate, not saved)", &s.config.fg_amd_only_generated);
+
+                if ((s.config.fg_amd_hud_ui || s.config.fg_amd_ship_ui || s.config.fg_amd_ship_still) && !s.config.fg_hud_protect) {
+                    ImGui::TextDisabled("Needs \"Keep the cockpit HUD steady\".");
+                }
+            }
             ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
             edit(ImGui::SliderInt("Frame limit (displayed FPS, 0 = off)", &s.config.fg_fps_limit, 0, 360));
             ImGui::TextDisabled("Use this limit only (no external limiter): set it just below the refresh rate, e.g. 140 at 144 Hz.");
 
-            if (s.config.fg_generate && !st.streamline) {
+            if (s.config.fg_generate && !st.streamline && !st.amd) {
                 ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), st.error != nullptr ? "Stopped: %s" : "Restart the game to start frame generation.",
                     st.error != nullptr ? st.error : "");
                 return;
@@ -539,7 +601,12 @@ namespace edaa
                 ImGui::Text("Status: starting, %.0f FPS", st.real_fps);
             }
 
-            ImGui::Text("Reflex low latency: %s", st.reflex ? "on" : "off");
+            if (st.amd) {
+                ImGui::TextUnformatted("AMD FSR Frame Generation (experimental), frame limit by EDAA (no Reflex)");
+            }
+            else {
+                ImGui::Text("Reflex low latency: %s", st.reflex ? "on" : "off");
+            }
 
             if (s.config.fg_hud_protect && st.generating) {
                 ImGui::Text("HUD protection: %s", st.hud_protected ? "active" : "no HUD found this frame");
