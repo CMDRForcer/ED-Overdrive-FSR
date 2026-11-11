@@ -103,9 +103,21 @@ target_compile_definitions(edaa PRIVATE EDAA_DEVELOPER=$<IF:$<OR:$<BOOL:${EDAA_D
 # NVIDIA DLSS (DLAA): built in when the SDK submodule third_party/dlss is checked out.
 # The submodule only references NVIDIA's repository: the SDK itself is shipped
 # only inside the application (static lib + release DLL), as its license requires.
+# Vendor build (edaa/docs/vendors.md): every build carries what runs on that vendor's
+# cards. -DEDAA_VENDOR=amd leaves out DLSS, DLSS-G and Reflex (NVIDIA only).
+set(EDAA_VENDOR "nvidia" CACHE STRING "Vendor build: nvidia or amd")
+set_property(CACHE EDAA_VENDOR PROPERTY STRINGS nvidia amd)
+if(EDAA_VENDOR STREQUAL "amd")
+	target_compile_definitions(edaa PRIVATE EDAA_VENDOR_AMD=1)
+	message(STATUS "AMD build: without DLSS, DLSS-G and Reflex")
+elseif(EDAA_VENDOR STREQUAL "nvidia")
+	target_compile_definitions(edaa PRIVATE EDAA_VENDOR_AMD=0)
+else()
+	message(FATAL_ERROR "EDAA_VENDOR must be nvidia or amd")
+endif()
 option(EDAA_WITH_DLSS "Build with NVIDIA DLSS when the SDK is present" ON)
 set(DLSS_DIR ${CMAKE_SOURCE_DIR}/third_party/dlss)
-if(EDAA_WITH_DLSS AND EXISTS ${DLSS_DIR}/include/nvsdk_ngx_helpers.h)
+if(EDAA_WITH_DLSS AND NOT EDAA_VENDOR STREQUAL "amd" AND EXISTS ${DLSS_DIR}/include/nvsdk_ngx_helpers.h)
 	target_include_directories(edaa SYSTEM PRIVATE ${DLSS_DIR}/include)
 	set(DLSS_LIB ${DLSS_DIR}/lib/Windows_x86_64/x64)
 	target_link_libraries(edaa PRIVATE $<IF:$<CONFIG:Debug>,${DLSS_LIB}/nvsdk_ngx_s_dbg.lib,${DLSS_LIB}/nvsdk_ngx_s.lib>)
@@ -161,7 +173,7 @@ endif()
 # extracted SDK zip (CI downloads it); the DLLs are shipped next to EDAA.addon64.
 option(EDAA_WITH_STREAMLINE "Build with NVIDIA Streamline when the SDK is present" ON)
 set(SL_DIR ${CMAKE_SOURCE_DIR}/third_party/streamline)
-if(EDAA_WITH_STREAMLINE AND EXISTS ${SL_DIR}/include/sl_dlss_g.h)
+if(EDAA_WITH_STREAMLINE AND NOT EDAA_VENDOR STREQUAL "amd" AND EXISTS ${SL_DIR}/include/sl_dlss_g.h)
 	target_include_directories(edaa SYSTEM PRIVATE ${SL_DIR}/include)
 	target_compile_definitions(edaa PRIVATE EDAA_SL=1)
 	# Production Streamline DLLs and the DLSS-G library next to EDAA.addon64.

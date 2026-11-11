@@ -15,6 +15,11 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Title = $"ED-Overdrive für {Vendor.Name} – FSR experimentell";
+        // AMD build: DLSS 5 and the NVIDIA driver presets run on NVIDIA cards only (edaa/docs/vendors.md).
+        foreach (var item in Navigation.Children.OfType<RadioButton>().Where(b => Vendor.Amd && b.Tag is "dlss5" or "presets").ToList()) {
+            Navigation.Children.Remove(item);
+        }
         UpdateGameState();
         gameStateTimer.Tick += (_, _) => UpdateGameState();
         gameStateTimer.Start();

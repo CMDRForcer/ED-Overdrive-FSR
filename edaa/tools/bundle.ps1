@@ -4,6 +4,7 @@
 param(
     [Parameter(Mandatory)][string]$Release,
     [Parameter(Mandatory)][string]$Out,
+    [ValidateSet('nvidia', 'amd')][string]$Vendor = 'nvidia', # amd: no NVIDIA DLLs (edaa/docs/vendors.md)
     [string]$Version = (Get-Content (Join-Path $PSScriptRoot '..\VERSION') -TotalCount 1).Trim()
 )
 $ErrorActionPreference = 'Stop'
@@ -13,9 +14,11 @@ $tp = Join-Path $edaa 'third_party'
 $stage = Join-Path ([IO.Path]::GetTempPath()) ("edaa-bundle-" + [guid]::NewGuid())
 New-Item -ItemType Directory -Force "$stage\licenses" | Out-Null
 try {
-    foreach ($f in 'EDAA.addon64', 'nvngx_dlss.dll', 'libxess.dll', 'sl.interposer.dll', 'sl.common.dll',
-                   'sl.dlss_g.dll', 'sl.reflex.dll', 'sl.pcl.dll', 'nvngx_dlssg.dll',
-                   'amd_fidelityfx_loader_dx12.dll', 'amd_fidelityfx_upscaler_dx12.dll', 'amd_fidelityfx_framegeneration_dx12.dll') {
+    $nvidia = 'nvngx_dlss.dll', 'sl.interposer.dll', 'sl.common.dll', 'sl.dlss_g.dll', 'sl.reflex.dll', 'sl.pcl.dll', 'nvngx_dlssg.dll'
+    $files = @('EDAA.addon64', 'libxess.dll',
+               'amd_fidelityfx_loader_dx12.dll', 'amd_fidelityfx_upscaler_dx12.dll', 'amd_fidelityfx_framegeneration_dx12.dll')
+    if ($Vendor -eq 'nvidia') { $files += $nvidia }
+    foreach ($f in $files) {
         Copy-Item (Join-Path $Release $f) $stage
     }
     Copy-Item "$edaa\README.md", "$edaa\LICENSE", "$edaa\THIRD_PARTY_NOTICES.md" $stage
@@ -28,6 +31,9 @@ try {
         "$tp\streamline\license.txt"                     = 'NVIDIA-Streamline-LICENSE.txt'
         "$tp\streamline\external\ngx-sdk\license.txt"    = 'NVIDIA-NGX-SDK-LICENSE.txt'
         "$tp\fidelityfx\Kits\FidelityFX\docs\license.md" = 'AMD-FidelityFX-LICENSE.md'
+    }
+    if ($Vendor -eq 'amd') {
+        foreach ($key in @($licenses.Keys | Where-Object { $_ -match '\\(dlss|streamline)\\' })) { $licenses.Remove($key) }
     }
     foreach ($entry in $licenses.GetEnumerator()) {
         Copy-Item $entry.Key (Join-Path "$stage\licenses" $entry.Value)
@@ -48,7 +54,7 @@ try {
     finally {
         $zip.Dispose()
     }
-    Write-Host "EDAA $Version packed into $Out"
+    Write-Host "EDAA $Version ($Vendor) packed into $Out"
 }
 finally {
     Remove-Item -Recurse -Force $stage

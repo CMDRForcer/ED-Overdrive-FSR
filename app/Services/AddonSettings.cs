@@ -16,8 +16,9 @@ public static class AddonSettings
 {
     public const string Section = "EDAA";
 
+    // AMD build: without DLSS and DLSS-G (edaa/docs/vendors.md).
     public static readonly (string Value, string Text)[] Methods = [
-        ("0", "EDAA TAA"), ("1", "NVIDIA DLSS"), ("2", "Intel XeSS"), ("3", "AMD FSR 4 / 3.1 (experimentell)"),
+        ("0", "EDAA TAA"), .. (Vendor.Nvidia ? new[] { ("1", "NVIDIA DLSS") } : Array.Empty<(string, string)>()), ("2", "Intel XeSS"), ("3", "AMD FSR 4 / 3.1 (experimentell)"),
     ];
 
     public static readonly (string Value, string Text)[] FgBackends = [
@@ -29,7 +30,10 @@ public static class AddonSettings
     ];
 
     // The values worth changing. Defaults as in docs/plan.md, ranges as the overlay's sliders.
-    public static readonly AddonSetting[] All = [
+    public static AddonSetting[] All => AllSettings.Where(s => Vendor.Nvidia || s.Key is not ("fg_backend" or "dlss_preset"))
+        .Select(s => Vendor.Amd && s.Key == "aa_method" ? s with { Default = "3" } : s).ToArray();
+
+    static readonly AddonSetting[] AllSettings = [
         new("Frame Generation", "fg_backend", "Verfahren", "Wird beim Spielstart gelesen. AMD FSR FG ist experimentell und nutzt EDAAs eigenes Bildlimit statt Reflex.", SettingKind.Choice, "0", Choices: FgBackends),
         new("Frame Generation", "fg_amd_hud_ui", "AMD: HUD aus dem neuesten echten Bild", "Nur AMD FSR FG (experimentell): kein doppeltes Cockpit-HUD in generierten Bildern. Braucht „HUD ruhig halten“.", SettingKind.Toggle, "0"),
         new("Frame Generation", "fg_amd_ship_ui", "AMD: eigenes Schiff aus dem neuesten echten Bild", "Nur AMD FSR FG (experimentell): kein Flimmern am Schiffsvorbau in generierten Bildern. Braucht „HUD ruhig halten“.", SettingKind.Toggle, "0"),

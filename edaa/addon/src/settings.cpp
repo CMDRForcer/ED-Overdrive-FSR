@@ -114,6 +114,14 @@ namespace edaa
         }
 
         config.debug = static_cast<int>(debug_view::off);
+#if EDAA_VENDOR_AMD
+        // AMD build: no DLSS and no DLSS-G (edaa/docs/vendors.md).
+        config.fg_backend = 1;
+
+        if (config.aa_method == static_cast<int>(aa_method::dlaa)) {
+            config.aa_method = static_cast<int>(aa_method::fsr);
+        }
+#endif
         sync_upscaler(config);
         return method_saved;
     }

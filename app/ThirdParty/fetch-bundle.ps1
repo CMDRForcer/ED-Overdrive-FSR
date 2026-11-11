@@ -4,7 +4,8 @@
 #             local add-on build in edaa/build/Release, or else taken from the newest ED-Overdrive release.
 #             Delete it to pick up a newer add-on build.
 #   ReShade:  the official add-on installer, pinned by SHA-256 (keep in step with InstallService.BundledReShade).
-param([string]$Out = $PSScriptRoot)
+#   -Vendor amd: EDAA-amd.zip, packed from edaa/build-amd/Release (no release download).
+param([string]$Out = $PSScriptRoot, [ValidateSet('nvidia', 'amd')][string]$Vendor = 'nvidia')
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
@@ -32,14 +33,17 @@ if (-not ((Test-Path $reshade) -and (Sha256 $reshade) -eq $reshadeSha)) {
     Move-Item "$reshade.part" $reshade -Force
 }
 
-$edaa = Join-Path $Out 'EDAA.zip'
+$edaa = Join-Path $Out ($(if ($Vendor -eq 'amd') { 'EDAA-amd.zip' } else { 'EDAA.zip' }))
 if (Test-Path $edaa) {
     return
 }
-$release = Join-Path $PSScriptRoot '..\..\edaa\build\Release'
+$release = Join-Path $PSScriptRoot ($(if ($Vendor -eq 'amd') { '..\..\edaa\build-amd\Release' } else { '..\..\edaa\build\Release' }))
 if (Test-Path (Join-Path $release 'EDAA.addon64')) {
-    & (Join-Path $PSScriptRoot '..\..\edaa\tools\bundle.ps1') -Release $release -Out $edaa
+    & (Join-Path $PSScriptRoot '..\..\edaa\tools\bundle.ps1') -Release $release -Out $edaa -Vendor $Vendor
     return
+}
+if ($Vendor -eq 'amd') {
+    throw 'No EDAA-amd.zip: build the add-on with -DEDAA_VENDOR=amd into edaa/build-amd first (edaa/docs/vendors.md).'
 }
 $latest = Invoke-RestMethod -Uri 'https://api.github.com/repos/CMDRForcer/ED-Overdrive/releases?per_page=10' -UserAgent 'ED-Overdrive-build'
 $asset = $latest | Where-Object { -not $_.draft } | ForEach-Object { $_.assets } |

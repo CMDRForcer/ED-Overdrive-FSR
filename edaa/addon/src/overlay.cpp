@@ -121,7 +121,9 @@ namespace edaa
             };
             const choice choices[] = {
                 { aa_method::taa, "EDAA TAA", 1 },
+#if !EDAA_VENDOR_AMD
                 { aa_method::dlaa, "NVIDIA DLSS", dlss::availability() },
+#endif
                 { aa_method::xess, "Intel XeSS", xess::availability() },
                 { aa_method::fsr, "AMD FSR (experimental)", fsr::availability() },
             };
@@ -519,6 +521,9 @@ namespace edaa
                 s.config.fg_present_test = true; // the D3D12 swap chain it needs
             }
 
+#if EDAA_VENDOR_AMD
+            ImGui::TextUnformatted("Frame generation by AMD FSR Frame Generation (experimental)");
+#else
             // Read at game start: changing it here takes effect after a restart (no rebuild while playing).
             const char* backends[] = { "NVIDIA DLSS-G (RTX 40/50)", "AMD FSR Frame Generation (experimental, any GPU)" };
             int backend = s.config.fg_backend == 1 ? 1 : 0;
@@ -528,6 +533,7 @@ namespace edaa
                 s.config.fg_backend = backend;
                 edit(true);
             }
+#endif
 
             const bool running_amd = st.amd, running_nv = st.streamline;
 
