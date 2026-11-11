@@ -1,5 +1,5 @@
 # A published release (tag vX.Y.Z on main): build the add-on and the app with the add-on inside,
-# then attach ED-Overdrive-FSR.exe (NVIDIA), ED-Overdrive-AMD.exe and the EDAA zips (for installing by
+# then attach ED-Overdrive-NVIDIA.exe (NVIDIA), ED-Overdrive-AMD.exe and the EDAA zips (for installing by
 # hand) to the release. Vendor builds: edaa/docs/vendors.md.
 name: Release
 
@@ -62,7 +62,7 @@ jobs:
 
       - name: Attach to the release
         shell: pwsh
-        run: gh release upload "$env:TAG" app/bin/publish/ED-Overdrive-FSR.exe app/bin/publish/ED-Overdrive-AMD.exe "EDAA-${{ steps.edaa.outputs.version }}.zip" "EDAA-${{ steps.edaa.outputs.version }}-amd.zip" --clobber
+        run: gh release upload "$env:TAG" app/bin/publish/ED-Overdrive-NVIDIA.exe app/bin/publish/ED-Overdrive-AMD.exe "EDAA-${{ steps.edaa.outputs.version }}.zip" "EDAA-${{ steps.edaa.outputs.version }}-amd.zip" --clobber
         env:
           TAG: ${{ github.event.release.tag_name }}
           GH_TOKEN: ${{ github.token }}

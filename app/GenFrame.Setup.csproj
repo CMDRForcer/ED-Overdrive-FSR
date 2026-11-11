@@ -9,7 +9,7 @@
     <!-- Vendor build (edaa/docs/vendors.md): -p:Vendor=amd for the AMD app. -->
     <Vendor Condition="'$(Vendor)' == ''">nvidia</Vendor>
     <AssemblyName Condition="'$(Vendor)' == 'amd'">ED-Overdrive-AMD</AssemblyName>
-    <AssemblyName Condition="'$(Vendor)' != 'amd'">ED-Overdrive-FSR</AssemblyName>
+    <AssemblyName Condition="'$(Vendor)' != 'amd'">ED-Overdrive-NVIDIA</AssemblyName>
     <DefineConstants Condition="'$(Vendor)' == 'amd'">$(DefineConstants);VENDOR_AMD</DefineConstants>
     <EdaaBundle Condition="'$(Vendor)' == 'amd'">EDAA-amd.zip</EdaaBundle>
     <EdaaBundle Condition="'$(Vendor)' != 'amd'">EDAA.zip</EdaaBundle>
