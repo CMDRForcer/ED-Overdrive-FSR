@@ -348,7 +348,13 @@ float3 ps_sharpen(float4 pos : SV_Position) : SV_Target
 // only when what was added is at least half as bright as what was under it,
 // so faint glows do not cost it its history. Dilated by one pixel to cover the
 // edges once upscaled.
-float ps_hud_mask(float4 pos : SV_Position) : SV_Target
+struct hud_mask_output
+{
+    float changed : SV_Target0; // 1 where the HUD changed the pixel or a neighbour (frame generation, TAA upscaling)
+    float graded : SV_Target1; // 0..1: how much the HUD makes up the pixel (reactive mask of the upscalers)
+};
+
+hud_mask_output ps_hud_mask(float4 pos : SV_Position)
 {
     float changed = 0;
 
@@ -366,7 +372,21 @@ float ps_hud_mask(float4 pos : SV_Position) : SV_Target
     }
     // clang-format on
 
-    return changed;
+    // Graded, this pixel only: the HUD's share of the pixel. Bright text and lines
+    // (share near 1) keep no history in the upscaler; the faint tint of a panel's
+    // background (share just above the 1/3 of 'changed') keeps it, so the scene
+    // behind stays anti-aliased instead of flickering inside the panel rectangle.
+    const int3 c = int3(pos.xy, 0);
+    const float3 before = history_tex.Load(c).rgb;
+    const float3 diff = abs(scene_color.Load(c) - before);
+    const float added = max(diff.r, max(diff.g, diff.b));
+    const float under = max(before.r, max(before.g, before.b));
+    const float share = added / (added + under + 1e-4);
+
+    hud_mask_output o;
+    o.changed = changed;
+    o.graded = added > 0.004 ? smoothstep(0.34, 0.75, share) : 0;
+    return o;
 }
 
 

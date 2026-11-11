@@ -106,6 +106,7 @@ namespace edaa
             target upscale_input; // upscaling: typed copy of the game's tonemapped image (it is typeless)
             target hud_snapshot; // upscaling: scene at the resolve point, before the cockpit HUD
             target hud_mask; // upscaling: R8, 1 where the HUD was drawn (ps_hud_mask)
+            target hud_grade; // upscaling: R8, 0..1 share of the HUD in the pixel (ps_hud_mask), the upscalers' reactive mask
             target hud_mask_prev; // AMD frame generation HUD layer: last frame's hud_mask
             bool hud_mask_prev_valid = false;
             target reactive_snapshot; // scene right before the first transparent draw
@@ -305,6 +306,7 @@ namespace edaa
             gpu.depth_copy = {};
             gpu.hud_snapshot = {};
             gpu.hud_mask = {};
+            gpu.hud_grade = {};
             gpu.hud_mask_prev = {};
             gpu.hud_mask_prev_valid = false;
             gpu.reactive_snapshot = {};
@@ -684,7 +686,8 @@ namespace edaa
         void draw_hud_mask(ID3D11DeviceContext* ctx, bool final)
         {
             if (!upscale_in.snapshot || upscale_in.mask_final || !gpu.color.srv || !gpu.hud_snapshot.srv ||
-                (!gpu.hud_mask.tex && !create_target(DXGI_FORMAT_R8_UNORM, gpu.hud_mask))) {
+                (!gpu.hud_mask.tex && !create_target(DXGI_FORMAT_R8_UNORM, gpu.hud_mask)) ||
+                (!gpu.hud_grade.tex && !create_target(DXGI_FORMAT_R8_UNORM, gpu.hud_grade))) {
                 return;
             }
 
@@ -696,8 +699,8 @@ namespace edaa
 
             set_viewport(ctx, static_cast<float>(gpu.width), static_cast<float>(gpu.height));
             bind_srvs(ctx, {});
-            ID3D11RenderTargetView* const targets[] = { gpu.hud_mask.rtv.Get() };
-            ctx->OMSetRenderTargets(1, targets, nullptr);
+            ID3D11RenderTargetView* const targets[] = { gpu.hud_mask.rtv.Get(), gpu.hud_grade.rtv.Get() };
+            ctx->OMSetRenderTargets(2, targets, nullptr);
             bind_srvs(ctx, { gpu.color.srv.Get(), gpu.hud_snapshot.srv.Get() });
             ctx->PSSetShader(gpu.ps_hud_mask.Get(), nullptr, 0);
             ctx->Draw(3, 0);
@@ -1217,7 +1220,7 @@ namespace edaa
             ID3D11Buffer* const cb[] = { gpu.motion_cb.Get(), gpu.object_cb.Get() };
             ctx->PSSetConstantBuffers(0, 2, cb);
             const bool ship_auto = config.debug == static_cast<int>(debug_view::ship_auto);
-            ID3D11ShaderResourceView* const mask = config.debug == static_cast<int>(debug_view::hud_mask) ? gpu.hud_mask.srv.Get()
+            ID3D11ShaderResourceView* const mask = config.debug == static_cast<int>(debug_view::hud_mask) ? gpu.hud_grade.srv.Get()
                 : config.debug == static_cast<int>(debug_view::reactive)                                ? gpu.reactive.srv.Get()
                 : ship_auto                                                                              ? (gpu.ship_valid ? gpu.ship_score[gpu.ship_index].srv.Get() : nullptr)
                                                                                                          : gpu.mask.srv.Get();
@@ -1753,7 +1756,9 @@ namespace edaa
                     hud_motion_done = true;
                 }
 
-                u.hud_mask = upscale_in.hud_mask ? gpu.hud_mask.tex.Get() : nullptr;
+                // The upscalers get the graded HUD mask: the faint background of a panel
+                // keeps its anti-aliasing (the binary one stays for the frame generation).
+                u.hud_mask = upscale_in.hud_mask ? gpu.hud_grade.tex.Get() : nullptr;
 
                 // Reactive mask: alone, or max(HUD mask, reactive mask) in its own
                 // texture (the HUD mask itself also drives the frame generation HUD protection).
@@ -1763,7 +1768,7 @@ namespace edaa
                     }
                     else if (gpu.dlss_mask.tex || create_target(DXGI_FORMAT_R8_UNORM, gpu.dlss_mask)) {
                         const gpu_profiler::scope reactive_timed(ctx, gpu_profiler::reactive);
-                        ctx->CopyResource(gpu.dlss_mask.tex.Get(), gpu.hud_mask.tex.Get());
+                        ctx->CopyResource(gpu.dlss_mask.tex.Get(), gpu.hud_grade.tex.Get());
                         bind_fullscreen(ctx);
                         set_viewport(ctx, static_cast<float>(render_w), static_cast<float>(render_h));
                         bind_srvs(ctx, {});
