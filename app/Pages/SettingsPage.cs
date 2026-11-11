@@ -26,7 +26,7 @@ static class SettingsPage
             "Kantenglättung und FG an oder aus stehen unter „Schnellwahl“."));
 
         var changes = new Dictionary<string, string>();
-        foreach (var group in AddonSettings.All.GroupBy(s => s.Group)) {
+        foreach (var group in AddonSettings.Shown.GroupBy(s => s.Group)) {
             var title = Ui.Text(group.Key, Ui.Brush("AccentBrush"));
             title.Margin = new Thickness(0, 12, 0, 2);
             page.Children.Add(title);
@@ -41,7 +41,7 @@ static class SettingsPage
             Ui.Button("Auf Standard", (_, _) => {
                 var question = "Alle Werte dieser Seite auf Standard setzen? Die Schnellwahl bleibt, vorher wird ein Backup angelegt.";
                 if (MessageBox.Show(window, question, "ED-Overdrive", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes) {
-                    Save(window, game, "Vor Standardwerten", AddonSettings.All.ToDictionary(s => s.Key, s => s.Default));
+                    Save(window, game, "Vor Standardwerten", AddonSettings.Defaults());
                 }
             })));
         return page;
@@ -73,7 +73,10 @@ static class SettingsPage
             hint.TextWrapping = TextWrapping.Wrap;
             left.Children.Add(hint);
         }
-        return Ui.Row(left, Control(setting, AddonSettings.Read(game, setting), changes));
+        // A linked switch is on only when all its keys are.
+        var value = setting.Linked is null ? AddonSettings.Read(game, setting)
+            : setting.Keys.All(k => (AddonSettings.Get(game, k) ?? setting.Default) != "0") ? "1" : "0";
+        return Ui.Row(left, Control(setting, value, changes));
     }
 
     static FrameworkElement Control(AddonSetting setting, string value, Dictionary<string, string> changes)
@@ -81,7 +84,11 @@ static class SettingsPage
         switch (setting.Kind) {
             case SettingKind.Toggle: {
                 var box = new CheckBox { IsChecked = value != "0", VerticalAlignment = VerticalAlignment.Center };
-                box.Click += (_, _) => changes[setting.Key] = box.IsChecked == true ? "1" : "0";
+                box.Click += (_, _) => {
+                    foreach (var key in setting.Keys) {
+                        changes[key] = box.IsChecked == true ? "1" : "0";
+                    }
+                };
                 return box;
             }
             case SettingKind.Choice: {

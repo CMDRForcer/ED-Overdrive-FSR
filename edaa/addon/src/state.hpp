@@ -57,11 +57,11 @@ namespace edaa
         int fg_factory = 1; // frame generation: 0 = system dxgi.dll (crashes with ReShade), 1 = ReShade's dxgi.dll (fg_present.cpp)
         int fg_fps_limit = 140; // frame generation: Reflex limit of the displayed frames (real + generated), 0 = none
         bool fg_hud_protect = true; // frame generation: the cockpit HUD stands still in the generated frames (no smearing)
-        bool fg_amd_hud_ui = false; // AMD frame generation (experimental): the cockpit HUD in generated frames comes from the newest real frame (fg_present.cpp)
-        bool fg_amd_ship_ui = false; // AMD frame generation (experimental): the player's own ship in generated frames comes from the newest real frame
-        bool fg_amd_ship_still = false; // AMD frame generation: the player's own ship gets no motion in AMD's motion vectors
+        bool fg_amd_hud_ui = true; // AMD frame generation (experimental): the cockpit HUD in generated frames comes from the newest real frame (fg_present.cpp)
+        bool fg_amd_ship_ui = true; // AMD frame generation (experimental): the player's own ship in generated frames comes from the newest real frame
+        bool fg_amd_ship_still = true; // AMD frame generation: the player's own ship gets no motion in AMD's motion vectors
         float fg_amd_ship_distance = 0.0f; // AMD frame generation: closer than this (m) counts as the player's own ship too (outer hull, no stencil bit), 0 = off
-        bool fg_amd_ship_auto = false; // AMD frame generation: what moves with the camera (ps_ship_auto) counts as the player's own ship too
+        bool fg_amd_ship_auto = true; // AMD frame generation: what moves with the camera (ps_ship_auto) counts as the player's own ship too
         bool fg_amd_only_generated = false; // AMD frame generation: present the generated frames only (diagnosis, not saved)
         bool fg_amd_debug_view = false; // AMD frame generation: AMD's debug view in the generated frames (diagnosis)
         bool fg_generate = false; // DLSS Frame Generation through Streamline (fg_present.cpp)

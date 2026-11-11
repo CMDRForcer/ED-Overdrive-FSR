@@ -7,8 +7,13 @@ public enum QuickMode { DlaaFg, Dlaa, TaaFg, Off, Fsr, FsrFg }
 
 public enum SettingKind { Toggle, Whole, Real, Choice }
 
+// Expert: TAA tuning and game fixes, shown only with --dev (their defaults fit). Linked: keys that
+// one switch sets together (all on = on).
 public sealed record AddonSetting(string Group, string Key, string Label, string Hint, SettingKind Kind, string Default,
-    double Min = 0, double Max = 1, (string Value, string Text)[]? Choices = null);
+    double Min = 0, double Max = 1, (string Value, string Text)[]? Choices = null, bool Expert = false, string[]? Linked = null)
+{
+    public IEnumerable<string> Keys => Linked is null ? [Key] : Linked.Prepend(Key);
+}
 
 // The add-on's [EDAA] values in ReShade.ini. ReShade rewrites the file while Elite runs, so these
 // are only changed while the game is closed; the add-on reads them at the next start.
@@ -29,17 +34,25 @@ public static class AddonSettings
         ("0", "NVIDIA-Standard"), ("10", "J"), ("11", "K"), ("12", "L"), ("13", "M"),
     ];
 
+    // App started with --dev: the expert values are shown too.
+    public static readonly bool Developer = Environment.GetCommandLineArgs().Skip(1).Any(a => a.Equals("--dev", StringComparison.OrdinalIgnoreCase));
+
+    // What the settings page shows.
+    public static AddonSetting[] Shown => All.Where(s => !s.Expert || Developer).ToArray();
+
+    // Every key with its default ("Auf Standard" resets the hidden ones too).
+    public static Dictionary<string, string> Defaults() =>
+        All.SelectMany(s => s.Keys.Select(k => (k, s.Default))).ToDictionary(p => p.k, p => p.Default);
+
     // The values worth changing. Defaults as in docs/plan.md, ranges as the overlay's sliders.
     public static AddonSetting[] All => AllSettings.Where(s => Vendor.Nvidia || s.Key is not ("fg_backend" or "dlss_preset"))
         .Select(s => Vendor.Amd && s.Key == "aa_method" ? s with { Default = "3" } : s).ToArray();
 
     static readonly AddonSetting[] AllSettings = [
         new("Frame Generation", "fg_backend", "Verfahren", "Wird beim Spielstart gelesen. AMD FSR FG ist experimentell und nutzt EDAAs eigenes Bildlimit statt Reflex.", SettingKind.Choice, "0", Choices: FgBackends),
-        new("Frame Generation", "fg_amd_hud_ui", "AMD: HUD aus dem neuesten echten Bild", "Nur AMD FSR FG (experimentell): kein doppeltes Cockpit-HUD in generierten Bildern. Braucht „HUD ruhig halten“.", SettingKind.Toggle, "0"),
-        new("Frame Generation", "fg_amd_ship_ui", "AMD: eigenes Schiff aus dem neuesten echten Bild", "Nur AMD FSR FG (experimentell): kein Flimmern am Schiffsvorbau in generierten Bildern. Braucht „HUD ruhig halten“.", SettingKind.Toggle, "0"),
-        new("Frame Generation", "fg_amd_ship_still", "AMD: eigenes Schiff ohne Bewegung", "Nur AMD FSR FG (experimentell): das eigene Schiff steht in AMDs Bewegungsvektoren still, gegen Flimmern am Vorbau und Geisterbilder der Seitenpanels. Braucht „HUD ruhig halten“.", SettingKind.Toggle, "0"),
-        new("Frame Generation", "fg_amd_ship_auto", "AMD: eigenes Schiff automatisch erkennen", "Nur AMD FSR FG (experimentell): was sich beim Fliegen mit der Kamera mitbewegt, zählt als eigenes Schiff. Lernt in den ersten Sekunden Flug. Mit Abstand 0 nur automatisch.", SettingKind.Toggle, "0"),
-        new("Frame Generation", "fg_amd_ship_distance", "AMD: eigenes Schiff bis (m)", "Nur AMD FSR FG (experimentell): alles näher als dieser Abstand zählt als eigenes Schiff (Rumpf und Vorbau, die Elite nicht markiert). 0 = nur Cockpit. Etwa die sichtbare Schiffslänge, z. B. 95.", SettingKind.Real, "0", 0, 150),
+        new("Frame Generation", "fg_amd_hud_ui", "AMD: eigenes Schiff und HUD ruhig halten", "Nur AMD FSR FG (experimentell): kein doppeltes HUD, kein Flimmern am Vorbau, keine Geisterbilder der Seitenpanels. Das Schiff wird beim Fliegen automatisch erkannt. Braucht „HUD ruhig halten“.", SettingKind.Toggle, "1",
+            Linked: ["fg_amd_ship_ui", "fg_amd_ship_still", "fg_amd_ship_auto"]),
+        new("Frame Generation", "fg_amd_ship_distance", "AMD: eigenes Schiff bis (m)", "0 = nur automatisch erkennen. Flimmert der Außenrumpf noch, etwa die sichtbare Schiffslänge, z. B. 95.", SettingKind.Real, "0", 0, 150),
         new("Frame Generation", "fg_hud_protect", "HUD ruhig halten", "Das Cockpit-HUD verschmiert nicht in generierten Bildern.", SettingKind.Toggle, "1"),
         new("Frame Generation", "fg_fps_limit", "Bildlimit (angezeigte FPS, 0 = aus)", "Knapp unter der Bildwiederholrate, zum Beispiel 140 bei 144 Hz. Keinen zweiten Limiter nutzen.", SettingKind.Whole, "140", 0, 360),
         new("Kantenglättung", "aa_method", "Methode", "AMD FSR ist experimentell: FSR 4 auf Radeon RX 6000 und neuer, sonst FSR 3.1.", SettingKind.Choice, "1", Choices: Methods),
@@ -51,20 +64,20 @@ public static class AddonSettings
         new("Hochskalieren (nur unter 1,0 Supersampling)", "game_upscale", "Hochskalieren dem Spiel überlassen", "", SettingKind.Toggle, "0"),
         new("Hochskalieren (nur unter 1,0 Supersampling)", "upscale_sharpness", "Schärfe bei TAA-Hochskalierung", "", SettingKind.Real, "0.5", 0, 1),
         new("Hochskalieren (nur unter 1,0 Supersampling)", "upscale_hud_mask", "HUD ohne Nachzieher", "", SettingKind.Toggle, "1"),
-        new("Hochskalieren (nur unter 1,0 Supersampling)", "upscale_mip_bias", "Texturen in Ausgabeauflösung", "", SettingKind.Toggle, "1"),
-        new("TAA", "taa_history_weight", "Anteil der Vorbilder", "Mehr ist ruhiger, aber unschärfer.", SettingKind.Real, "0.93", 0.5, 0.98),
-        new("TAA", "taa_history_weight_motion", "Anteil der Vorbilder bei Bewegung", "Weniger gibt weniger Nachzieher, aber mehr Treppenstufen.", SettingKind.Real, "0.9", 0.3, 0.95),
-        new("TAA", "taa_history_weight_min", "Mindestanteil gegen Flimmern", "", SettingKind.Real, "0.95", 0.5, 0.95),
-        new("TAA", "taa_clip_gamma", "Clip-Box bei Bewegung", "", SettingKind.Real, "1.25", 0.5, 3),
-        new("TAA", "taa_clip_gamma_static", "Clip-Box im Stillstand", "Größer flimmert weniger.", SettingKind.Real, "5", 0.5, 5),
-        new("TAA", "taa_anti_flicker", "Flimmerschutz", "", SettingKind.Toggle, "1"),
-        new("TAA", "taa_soft_offscreen", "Weicher Bildrand", "", SettingKind.Toggle, "1"),
-        new("TAA", "taa_reconstruction", "Weichere Rekonstruktion", "", SettingKind.Toggle, "0"),
-        new("TAA", "taa_unjitter", "Ohne Jitter abtasten", "Weicheres Bild.", SettingKind.Toggle, "0"),
-        new("Korrekturen fürs Spiel", "fix_sun_shadows", "Sonnenschatten korrigieren", "", SettingKind.Toggle, "1"),
-        new("Korrekturen fürs Spiel", "vehicle_motion", "Bewegung des eigenen Fahrzeugs", "", SettingKind.Toggle, "1"),
-        new("Korrekturen fürs Spiel", "jitter_overlay_draws", "Decals und Lichter mitbewegen", "Sonst flimmern sie.", SettingKind.Toggle, "1"),
-        new("Korrekturen fürs Spiel", "map_detect_no_shadows", "Karten an fehlenden Schatten erkennen", "", SettingKind.Toggle, "1"),
+        new("Hochskalieren (nur unter 1,0 Supersampling)", "upscale_mip_bias", "Texturen in Ausgabeauflösung", "", SettingKind.Toggle, "1", Expert: true),
+        new("TAA", "taa_history_weight", "Anteil der Vorbilder", "Mehr ist ruhiger, aber unschärfer.", SettingKind.Real, "0.93", 0.5, 0.98, Expert: true),
+        new("TAA", "taa_history_weight_motion", "Anteil der Vorbilder bei Bewegung", "Weniger gibt weniger Nachzieher, aber mehr Treppenstufen.", SettingKind.Real, "0.9", 0.3, 0.95, Expert: true),
+        new("TAA", "taa_history_weight_min", "Mindestanteil gegen Flimmern", "", SettingKind.Real, "0.95", 0.5, 0.95, Expert: true),
+        new("TAA", "taa_clip_gamma", "Clip-Box bei Bewegung", "", SettingKind.Real, "1.25", 0.5, 3, Expert: true),
+        new("TAA", "taa_clip_gamma_static", "Clip-Box im Stillstand", "Größer flimmert weniger.", SettingKind.Real, "5", 0.5, 5, Expert: true),
+        new("TAA", "taa_anti_flicker", "Flimmerschutz", "", SettingKind.Toggle, "1", Expert: true),
+        new("TAA", "taa_soft_offscreen", "Weicher Bildrand", "", SettingKind.Toggle, "1", Expert: true),
+        new("TAA", "taa_reconstruction", "Weichere Rekonstruktion", "", SettingKind.Toggle, "0", Expert: true),
+        new("TAA", "taa_unjitter", "Ohne Jitter abtasten", "Weicheres Bild.", SettingKind.Toggle, "0", Expert: true),
+        new("Korrekturen fürs Spiel", "fix_sun_shadows", "Sonnenschatten korrigieren", "", SettingKind.Toggle, "1", Expert: true),
+        new("Korrekturen fürs Spiel", "vehicle_motion", "Bewegung des eigenen Fahrzeugs", "", SettingKind.Toggle, "1", Expert: true),
+        new("Korrekturen fürs Spiel", "jitter_overlay_draws", "Decals und Lichter mitbewegen", "Sonst flimmern sie.", SettingKind.Toggle, "1", Expert: true),
+        new("Korrekturen fürs Spiel", "map_detect_no_shadows", "Karten an fehlenden Schatten erkennen", "", SettingKind.Toggle, "1", Expert: true),
     ];
 
     static string IniPath(GameInstall game) => Path.Combine(game.Folder, "ReShade.ini");

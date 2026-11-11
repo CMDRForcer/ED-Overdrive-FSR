@@ -1,9 +1,11 @@
 // "EDAA" window in the ReShade overlay.
 //
-// Normal build: TAA on/off, status, reset to defaults, and an "Advanced
-// settings" section with the tuning values. Developer build (CMake option
-// EDAA_DEVELOPER, or a Debug build): also jitter, debug views, auto capture,
-// camera decoding and diagnostics. Every change is saved to ReShade.ini.
+// Player build: what a player needs or likes to change (method, model,
+// sharpness, frame generation, a few HUD options) and one status line each.
+// Developer build (CMake option EDAA_DEVELOPER, or a Debug build): also the
+// TAA tuning, masks and debug views, GPU timings, jitter, auto capture,
+// camera decoding and diagnostics. Hidden values keep their ReShade.ini value;
+// "Reset to defaults" resets them too. Every change is saved to ReShade.ini.
 
 #include "dlss.hpp"
 #include "fg.hpp"
@@ -40,34 +42,36 @@ namespace edaa
             ImGui::Separator();
             const uint32_t render_w = s.render_w, display_w = s.back_buffer_w;
             const float scale = display_w != 0 ? static_cast<float>(render_w) / static_cast<float>(display_w) : 0.0f;
-            ImGui::Text("Rendering resolution: %u x %u (%.2f x the display)", render_w, s.render_h, scale);
-            ImGui::Text("Display resolution:   %u x %u", display_w, s.back_buffer_h);
+            ImGui::Text("Resolution: %u x %u -> %u x %u (%.2f x)", render_w, s.render_h, display_w, s.back_buffer_h, scale);
 
             if (render_w == 0 || render_w >= display_w) {
-                ImGui::TextUnformatted("Native resolution: anti-aliasing only. Set the in-game supersampling");
-                ImGui::TextUnformatted("below 1.0 (or an FSR mode) to upscale with the same method.");
+                ImGui::TextDisabled("Anti-aliasing only. In-game supersampling below 1.0 upscales with the same method.");
                 return;
             }
 
             const auto used = static_cast<upscaler>(s.upscaler_used);
 
             if (s.config.game_upscale) {
-                ImGui::TextUnformatted("Upscaling: the game's (bilinear or FSR), after the anti-aliasing (Advanced).");
+                ImGui::TextUnformatted("Upscaling: by the game, after the anti-aliasing (Advanced settings).");
                 return;
             }
 
             const bool use_xess = used == upscaler::xess;
             const bool use_fsr = used == upscaler::fsr;
-            edit(ImGui::Checkbox("HUD mask (cockpit HUD from the current frame: no trails)", &s.config.upscale_hud_mask));
-            edit(ImGui::Checkbox("Texture mip bias (display resolution texture detail)", &s.config.upscale_mip_bias));
             ImGui::Text("Upscaling (%s): %s", use_xess ? "XeSS" : use_fsr ? "AMD FSR" : used == upscaler::taa ? "EDAA TAA"
                                                                                                           : "DLSS",
                 s.upscale_status);
-            ImGui::Text("Jitter: %d phases, texture LOD bias %+.2f", s.jitter_phases, s.mip_bias_value.load());
+            edit(ImGui::Checkbox("Cockpit HUD without trails", &s.config.upscale_hud_mask));
 
             if (used == upscaler::taa) {
                 edit(ImGui::SliderFloat("Sharpness", &s.config.upscale_sharpness, 0.0f, 1.0f, "%.2f"));
-                ImGui::TextUnformatted("Any scale works; the TAA settings (Advanced) apply.");
+            }
+
+#if EDAA_DEVELOPER
+            edit(ImGui::Checkbox("Texture mip bias (display resolution texture detail)", &s.config.upscale_mip_bias));
+            ImGui::Text("Jitter: %d phases, texture LOD bias %+.2f", s.jitter_phases, s.mip_bias_value.load());
+
+            if (used == upscaler::taa) {
                 return;
             }
 
@@ -102,6 +106,7 @@ namespace edaa
             }
 
             ImGui::TextUnformatted("Scale: the in-game supersampling closest to the mode's optimal size.");
+#endif
         }
 
 
@@ -195,6 +200,7 @@ namespace edaa
                 // Reactive mask: the current frame where transparents were drawn.
                 edit(ImGui::Checkbox("Reactive mask (particles, glass, glows: no trails)", &s.config.dlss_reactive_mask));
 
+#if EDAA_DEVELOPER
                 if (s.config.dlss_reactive_mask) {
                     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
                     edit(ImGui::SliderFloat("Reactive mask strength", &s.config.dlss_reactive_strength, 0.0f, 2.0f, "%.2f"));
@@ -207,6 +213,7 @@ namespace edaa
                         s.config.debug = show ? static_cast<int>(debug_view::reactive) : static_cast<int>(debug_view::off);
                     }
                 }
+#endif
             }
             else if (s.config.aa_method == static_cast<int>(aa_method::xess) && (EDAA_DEVELOPER || xess::availability() == 1)) {
                 ImGui::Text("XeSS: %s", xess::status().c_str());
@@ -214,8 +221,7 @@ namespace edaa
             else if (s.config.aa_method == static_cast<int>(aa_method::fsr) && (EDAA_DEVELOPER || fsr::availability() == 1)) {
                 // FSR 4 on the Radeon GPUs AMD's DLL supports, FSR 3.1 elsewhere (AMD's choice).
                 const std::string fsr_version = fsr::version();
-                ImGui::Text("FSR: %s", fsr::status().c_str());
-                ImGui::Text("Version: %s (experimental)", fsr_version.empty() ? "unknown" : fsr_version.c_str());
+                ImGui::Text("FSR %s: %s", fsr_version.empty() ? "" : fsr_version.c_str(), fsr::status().c_str());
                 edit(ImGui::SliderFloat("FSR sharpening (0 = off)", &s.config.fsr_sharpness, 0.0f, 1.0f, "%.2f"));
                 const float fsr_sharpness_default = settings{}.fsr_sharpness;
                 ImGui::SameLine();
@@ -249,9 +255,28 @@ namespace edaa
 
         void draw_advanced(addon_state& s, change_tracker& edit)
         {
+            const bool below = s.render_w != 0 && s.render_w < s.back_buffer_w;
+            edit(ImGui::Checkbox("Resolve before the HUD pass (HUD sharp, not anti-aliased)", &s.config.taa_before_hud));
+
+            if (!s.config.taa_before_hud && !s.last.bloom_shader) {
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "No bloom pass found: resolving before the HUD anyway");
+            }
+
+            edit(ImGui::Checkbox("Find the cockpit HUD by its panel textures (needed with EDHM)", &s.config.hud_learn));
+            edit(ImGui::Checkbox("Cockpit HUD moves with the cockpit (sharp panels when upscaling)", &s.config.hud_motion));
+
+            if (below || s.config.game_upscale) {
+                edit(ImGui::Checkbox("Below 1x, let the game upscale (bilinear or FSR) after the anti-aliasing", &s.config.game_upscale));
+            }
+        }
+
+
+#if EDAA_DEVELOPER
+        // TAA tuning and game fixes: their defaults fit, developer build only.
+        void draw_tuning(addon_state& s, change_tracker& edit)
+        {
             // Only what applies to what runs now: the TAA tuning when EDAA TAA
             // runs (its upscaling uses part of it), DLSS/XeSS have none.
-            const bool below = s.render_w != 0 && s.render_w < s.back_buffer_w;
             const bool neural = (s.config.aa_method == static_cast<int>(aa_method::dlaa) && dlss::availability() == 1) ||
                 (s.config.aa_method == static_cast<int>(aa_method::xess) && xess::availability() == 1) ||
                 (s.config.aa_method == static_cast<int>(aa_method::fsr) && fsr::availability() == 1);
@@ -287,15 +312,6 @@ namespace edaa
             }
 
             ImGui::TextUnformatted("Scene");
-            edit(ImGui::Checkbox("Resolve before the HUD pass (HUD sharp, not anti-aliased)", &s.config.taa_before_hud));
-
-            if (!s.config.taa_before_hud && !s.last.bloom_shader) {
-                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "No bloom pass found: resolving before the HUD anyway");
-            }
-            ImGui::Indent();
-            edit(ImGui::Checkbox("Find the cockpit HUD by its panel textures (HUD shaders replaced, e.g. EDHM)", &s.config.hud_learn));
-            edit(ImGui::Checkbox("Cockpit HUD moves with the cockpit (motion vectors for the HUD panels, upscaling)", &s.config.hud_motion));
-            ImGui::Unindent();
             edit(ImGui::Checkbox("Detect maps also by missing sun shadows", &s.config.map_detect_no_shadows));
             edit(ImGui::Combo("Vehicle mask", &s.config.mask_source, "Game stencil (player's vehicle)\0Distance to camera\0"));
 
@@ -306,14 +322,9 @@ namespace edaa
 
             edit(ImGui::Checkbox("Vehicle motion (cockpit follows head movements)", &s.config.vehicle_motion));
             edit(ImGui::Checkbox("Lighting follows the jitter (stable shadow edges)", &s.config.fix_sun_shadows));
-
-            if (below || s.config.game_upscale) {
-                edit(ImGui::Checkbox("Below 1x, let the game upscale (bilinear or FSR) after the anti-aliasing", &s.config.game_upscale));
-            }
         }
 
 
-#if EDAA_DEVELOPER
         void draw_camera(const addon_state& s)
         {
             ImGui::Text("Scene render size  %u x %u (from the G-buffer depth)", s.render_w, s.render_h);
@@ -544,18 +555,29 @@ namespace edaa
             edit(ImGui::Checkbox("Keep the cockpit HUD steady (no smearing in generated frames)", &s.config.fg_hud_protect));
 
             if (s.config.fg_backend == 1) {
+                // One switch for players: HUD and own ship from the newest real frame, the ship
+                // without motion, found automatically. The distance adds the outer hull.
+                bool steady = s.config.fg_amd_hud_ui && s.config.fg_amd_ship_ui && s.config.fg_amd_ship_still && s.config.fg_amd_ship_auto;
+
+                if (edit(ImGui::Checkbox("Keep own ship and cockpit HUD steady (AMD)", &steady))) {
+                    s.config.fg_amd_hud_ui = s.config.fg_amd_ship_ui = s.config.fg_amd_ship_still = s.config.fg_amd_ship_auto = steady;
+                }
+
+                if (steady) {
+                    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+                    edit(ImGui::SliderFloat("Own ship up to (m)", &s.config.fg_amd_ship_distance, 0.0f, 150.0f, "%.0f"));
+                    ImGui::TextDisabled("0 = found automatically. If the outer hull still flickers: about the ship length, e.g. 95.");
+                }
+
+#if EDAA_DEVELOPER
                 edit(ImGui::Checkbox("AMD: cockpit HUD from the newest real frame (no double HUD)", &s.config.fg_amd_hud_ui));
                 edit(ImGui::Checkbox("AMD: own ship from the newest real frame (no flicker on the hull)", &s.config.fg_amd_ship_ui));
                 edit(ImGui::Checkbox("AMD: own ship without motion (no hull flicker, no panel ghosts)", &s.config.fg_amd_ship_still));
 
-                if (s.config.fg_amd_ship_ui || s.config.fg_amd_ship_still) {
-                    edit(ImGui::Checkbox("AMD: detect own ship automatically (learns while flying)", &s.config.fg_amd_ship_auto));
-                    edit(ImGui::SliderFloat("AMD: own ship up to (m, 0 = cockpit only)", &s.config.fg_amd_ship_distance, 0.0f, 150.0f, "%.0f"));
-                    ImGui::TextDisabled("Outer hull and nose: about the visible ship length. Closer terrain stands still for AMD too.");
-                }
-
+                edit(ImGui::Checkbox("AMD: detect own ship automatically (learns while flying)", &s.config.fg_amd_ship_auto));
                 edit(ImGui::Checkbox("AMD: debug view in generated frames (diagnosis)", &s.config.fg_amd_debug_view));
                 ImGui::Checkbox("AMD: only generated frames (diagnosis, half frame rate, not saved)", &s.config.fg_amd_only_generated);
+#endif
 
                 if ((s.config.fg_amd_hud_ui || s.config.fg_amd_ship_ui || s.config.fg_amd_ship_still) && !s.config.fg_hud_protect) {
                     ImGui::TextDisabled("Needs \"Keep the cockpit HUD steady\".");
@@ -579,12 +601,15 @@ namespace edaa
             if (!s.config.fg_generate) {
                 ImGui::Text("Status: off (%.0f FPS)", st.real_fps);
 
+#if EDAA_DEVELOPER
+                // Players: the app's quick choice does this when the frame generation is off.
                 if (s.config.fg_present_test) {
                     if (ImGui::Button("Present through D3D11 again at the next game start")) {
                         s.config.fg_present_test = false;
                         edit(true);
                     }
                 }
+#endif
                 return;
             }
 
@@ -608,6 +633,7 @@ namespace edaa
                 ImGui::Text("Reflex low latency: %s", st.reflex ? "on" : "off");
             }
 
+#if EDAA_DEVELOPER
             if (s.config.fg_hud_protect && st.generating) {
                 ImGui::Text("HUD protection: %s", st.hud_protected ? "active" : "no HUD found this frame");
             }
@@ -615,10 +641,12 @@ namespace edaa
             if (st.dlssg_status != 0) {
                 ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "DLSS-G reports problem flags 0x%X (see ReShade.log)", st.dlssg_status);
             }
+#endif
         }
     }
 
 
+#if EDAA_DEVELOPER
     namespace
     {
         // GPU time of EDAA's passes on the game's D3D11 queue (gpu_profiler.cpp).
@@ -675,6 +703,7 @@ namespace edaa
             ImGui::TextDisabled("Not measured: DLSS-G generation (D3D12 queue). GITC Uplift NR (before upscaling) shows up in dlss.");
         }
     }
+#endif
 
 
     void draw_overlay(reshade::api::effect_runtime*)
@@ -696,11 +725,15 @@ namespace edaa
             draw_advanced(s, edit);
         }
 
+#if EDAA_DEVELOPER
+        if (ImGui::CollapsingHeader("TAA tuning and game fixes")) {
+            draw_tuning(s, edit);
+        }
+
         if (ImGui::CollapsingHeader("GPU timings")) {
             draw_gpu_timings(s, edit);
         }
 
-#if EDAA_DEVELOPER
         if (ImGui::CollapsingHeader("Developer", ImGuiTreeNodeFlags_DefaultOpen)) {
             draw_developer(s, edit);
         }

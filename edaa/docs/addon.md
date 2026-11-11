@@ -211,11 +211,20 @@ the SDK license (NVIDIA RTX SDKs) allows shipping it only inside an
 application. Without the DLSS submodule (or with `-DEDAA_WITH_DLSS=OFF`) the
 add-on builds without DLSS:
 `git submodule update --init --depth 1 third_party/reshade third_party/imgui`.
-Developer build (debug views, jitter controls, auto capture, frame trace,
-camera and diagnostics sections, extra hotkeys): add `-DEDAA_DEVELOPER=ON`,
-e.g. `cmake -S . -B build-dev -A x64 -DEDAA_DEVELOPER=ON`; Debug builds always
-include them. The normal build shows only TAA on/off, status, "Reset to
-defaults" and an "Advanced settings" section.
+Developer build (TAA tuning and game fixes, GPU timings, reactive mask
+tuning, the AMD frame generation's separate switches and debug views, jitter
+controls, auto capture, frame trace, camera and diagnostics sections, extra
+hotkeys): add `-DEDAA_DEVELOPER=ON`, e.g.
+`cmake -S . -B build-dev -A x64 -DEDAA_DEVELOPER=ON`; Debug builds always
+include them. The player build shows what a player needs or likes to change:
+anti-aliasing on/off, method, DLSS model, reactive mask, FSR and TAA upscaling
+sharpness, "Cockpit HUD without trails", frame generation (on/off, backend,
+HUD steady, one AMD switch "Keep own ship and cockpit HUD steady" with the
+ship distance, frame limit), one status line each, "Reset to defaults" and
+"Advanced settings" (resolve before the HUD, HUD by panel textures, HUD moves
+with the cockpit, let the game upscale). Hidden values keep their
+`ReShade.ini` value; "Reset to defaults" resets them too. The app hides the
+same values unless it is started with `--dev`.
 `tools\package.ps1` builds and packs `EDAA.addon64` + `INSTALL.txt` into
 `dist\EDAA-<date>\` and a zip (nothing is copied into the game folder).
 Shaders in `addon/shaders/` are compiled to headers by fxc at build time.
@@ -248,6 +257,7 @@ Developer builds only:
 TAA is on by default. Every change (overlay or `Ctrl+Shift+T`) is saved in
 `ReShade.ini`, section `[EDAA]`, and loaded at the next start; "Reset to
 defaults" restores the values below. The debug view always starts off.
+The TAA values below are in the developer build's "TAA tuning and game fixes".
 
 
 | Setting | Default | Effect |
