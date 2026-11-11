@@ -13,7 +13,8 @@ cbuffer motion_constants : register(b0)
                   // z: vehicle mask source (0 stencil bits, 1 distance), w: stencil bits of the player's vehicle
     float4 vehicle[3]; // rows of the vehicle motion: current -> previous camera-relative position (3x4)
     float4 vehicle_on; // x: 1 when the vehicle motion is known, else vehicle pixels get no motion,
-                       // y: AMD frame generation ship distance (m, 0 = off; fg_amd_ship_distance)
+                       // y: AMD frame generation ship distance (m, 0 = off; fg_amd_ship_distance),
+                       // z: 1 = AMD frame generation uses the automatic ship detection (t2 in ps_motion, fg_amd_ship_auto)
 };
 
 // Moving objects debug view (object_motion.cpp), up to 128 markers.
@@ -91,6 +92,11 @@ motion_output ps_motion(float4 pos : SV_Position)
     // stencil bit. Closer than vehicle_on.y metres counts as the ship for AMD only
     // (0.4: below the 0.5 threshold of TAA and the vehicle motion below).
     if (o.mask == 0 && vehicle_on.y > 0 && depth > 0 && params.z / depth < vehicle_on.y) {
+        o.mask = 0.4;
+    }
+
+    // Same for what the automatic detection found moving with the camera (t2, ps_ship_auto).
+    if (o.mask == 0 && vehicle_on.z > 0 && depth > 0 && mask_tex.Load(int3(pos.xy, 0)) > 0.5) {
         o.mask = 0.4;
     }
 

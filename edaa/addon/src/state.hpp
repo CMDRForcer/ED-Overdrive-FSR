@@ -61,6 +61,7 @@ namespace edaa
         bool fg_amd_ship_ui = false; // AMD frame generation (experimental): the player's own ship in generated frames comes from the newest real frame
         bool fg_amd_ship_still = false; // AMD frame generation: the player's own ship gets no motion in AMD's motion vectors
         float fg_amd_ship_distance = 0.0f; // AMD frame generation: closer than this (m) counts as the player's own ship too (outer hull, no stencil bit), 0 = off
+        bool fg_amd_ship_auto = false; // AMD frame generation: what moves with the camera (ps_ship_auto) counts as the player's own ship too
         bool fg_amd_only_generated = false; // AMD frame generation: present the generated frames only (diagnosis, not saved)
         bool fg_amd_debug_view = false; // AMD frame generation: AMD's debug view in the generated frames (diagnosis)
         bool fg_generate = false; // DLSS Frame Generation through Streamline (fg_present.cpp)

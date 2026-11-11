@@ -543,6 +543,7 @@ namespace edaa
                 edit(ImGui::Checkbox("AMD: own ship without motion (no hull flicker, no panel ghosts)", &s.config.fg_amd_ship_still));
 
                 if (s.config.fg_amd_ship_ui || s.config.fg_amd_ship_still) {
+                    edit(ImGui::Checkbox("AMD: detect own ship automatically (learns while flying)", &s.config.fg_amd_ship_auto));
                     edit(ImGui::SliderFloat("AMD: own ship up to (m, 0 = cockpit only)", &s.config.fg_amd_ship_distance, 0.0f, 150.0f, "%.0f"));
                     ImGui::TextDisabled("Outer hull and nose: about the visible ship length. Closer terrain stands still for AMD too.");
                 }

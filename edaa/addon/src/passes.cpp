@@ -54,7 +54,7 @@ namespace edaa
             float render_size[4];
             float debug[4]; // mode, pixels for full colour
             float vehicle[3][4]; // vehicle motion: current -> previous camera-relative position
-            float vehicle_on[4]; // x: vehicle motion known, y: AMD frame generation ship distance (m)
+            float vehicle_on[4]; // x: vehicle motion known, y: AMD frame generation ship distance (m), z: AMD automatic ship
         };
 
         struct alignas(16) object_constants
@@ -931,7 +931,10 @@ namespace edaa
             mc.debug[3] = static_cast<float>(in.config.mask_stencil_bits);
             std::memcpy(mc.vehicle, in.vehicle, sizeof(mc.vehicle));
             mc.vehicle_on[0] = in.vehicle_known ? 1.0f : 0.0f;
-            mc.vehicle_on[1] = in.config.fg_backend == 1 && (in.config.fg_amd_ship_still || in.config.fg_amd_ship_ui) ? in.config.fg_amd_ship_distance : 0.0f;
+            const bool amd_ship = in.config.fg_backend == 1 && (in.config.fg_amd_ship_still || in.config.fg_amd_ship_ui);
+            const bool amd_ship_auto = amd_ship && in.config.fg_amd_ship_auto;
+            mc.vehicle_on[1] = amd_ship ? in.config.fg_amd_ship_distance : 0.0f;
+            mc.vehicle_on[2] = amd_ship_auto ? 1.0f : 0.0f;
 
             const std::lock_guard<std::mutex> lock(gpu_mutex);
 
@@ -970,21 +973,12 @@ namespace edaa
             const float w = mc.render_size[0], h = mc.render_size[1];
             set_viewport(ctx, w, h);
 
-            // 1. Motion vectors + vehicle mask.
-            {
-                const gpu_profiler::scope timed(ctx, gpu_profiler::motion);
-                bind_srvs(ctx, {});
-                ID3D11RenderTargetView* const motion_targets[] = { gpu.motion.rtv.Get(), gpu.mask.rtv.Get() };
-                ctx->OMSetRenderTargets(2, motion_targets, nullptr);
-                ID3D11Buffer* const motion_cb[] = { gpu.motion_cb.Get() };
-                ctx->PSSetConstantBuffers(0, 1, motion_cb);
-                bind_srvs(ctx, { gpu.depth.srv.Get(), nullptr, nullptr, nullptr, gpu.stencil_srv.Get() });
-                ctx->PSSetShader(gpu.ps_motion.Get(), nullptr, 0);
-                ctx->Draw(3, 0);
-            }
+            ID3D11Buffer* const motion_cb[] = { gpu.motion_cb.Get() };
+            ctx->PSSetConstantBuffers(0, 1, motion_cb);
 
-            // Automatic ship detection (diagnosis view for now).
-            if (in.config.debug == static_cast<int>(debug_view::ship_auto) && gpu.ps_ship_auto) {
+            // 0. Automatic ship detection (debug view "Ship auto", fg_amd_ship_auto):
+            // ps_motion below reads this frame's score.
+            if ((amd_ship_auto || in.config.debug == static_cast<int>(debug_view::ship_auto)) && gpu.ps_ship_auto) {
                 bool ready = true;
 
                 for (int i = 0; i < 2 && ready; ++i) {
@@ -1015,6 +1009,18 @@ namespace edaa
             }
             else {
                 gpu.ship_valid = false;
+            }
+
+            // 1. Motion vectors + vehicle mask.
+            {
+                const gpu_profiler::scope timed(ctx, gpu_profiler::motion);
+                bind_srvs(ctx, {});
+                ID3D11RenderTargetView* const motion_targets[] = { gpu.motion.rtv.Get(), gpu.mask.rtv.Get() };
+                ctx->OMSetRenderTargets(2, motion_targets, nullptr);
+                ID3D11ShaderResourceView* const ship_score = amd_ship_auto && gpu.ship_valid ? gpu.ship_score[gpu.ship_index].srv.Get() : nullptr;
+                bind_srvs(ctx, { gpu.depth.srv.Get(), nullptr, ship_score, nullptr, gpu.stencil_srv.Get() });
+                ctx->PSSetShader(gpu.ps_motion.Get(), nullptr, 0);
+                ctx->Draw(3, 0);
             }
 
             // Reactive mask: what the transparents changed since the snapshot.
@@ -1439,6 +1445,7 @@ namespace edaa
 
             if (s.on_foot) {
                 in.config.fg_amd_ship_distance = 0.0f; // no ship around the camera
+                in.config.fg_amd_ship_auto = false;
             }
 
             const upscale_failure& f = upscale_failed;
