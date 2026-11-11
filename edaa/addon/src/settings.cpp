@@ -67,7 +67,14 @@ namespace edaa
             EDAA_FIELD(fg_present_test, boolean),
             EDAA_FIELD(fg_factory, integer),
             EDAA_FIELD(fg_generate, boolean),
+            EDAA_FIELD(fg_backend, integer),
             EDAA_FIELD(fg_hud_protect, boolean),
+            EDAA_FIELD(fg_amd_hud_ui, boolean),
+            EDAA_FIELD(fg_amd_ship_ui, boolean),
+            EDAA_FIELD(fg_amd_ship_still, boolean),
+            EDAA_FIELD(fg_amd_ship_distance, real),
+            EDAA_FIELD(fg_amd_ship_auto, boolean),
+            EDAA_FIELD(fg_amd_debug_view, boolean),
             EDAA_FIELD(fg_fps_limit, integer),
             EDAA_FIELD(gpu_profiler, boolean),
         };
@@ -107,6 +114,14 @@ namespace edaa
         }
 
         config.debug = static_cast<int>(debug_view::off);
+#if EDAA_VENDOR_AMD
+        // AMD build: no DLSS and no DLSS-G (edaa/docs/vendors.md).
+        config.fg_backend = 1;
+
+        if (config.aa_method == static_cast<int>(aa_method::dlaa)) {
+            config.aa_method = static_cast<int>(aa_method::fsr);
+        }
+#endif
         sync_upscaler(config);
         return method_saved;
     }

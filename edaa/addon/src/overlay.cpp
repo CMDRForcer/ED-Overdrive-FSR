@@ -121,7 +121,9 @@ namespace edaa
             };
             const choice choices[] = {
                 { aa_method::taa, "EDAA TAA", 1 },
+#if !EDAA_VENDOR_AMD
                 { aa_method::dlaa, "NVIDIA DLSS", dlss::availability() },
+#endif
                 { aa_method::xess, "Intel XeSS", xess::availability() },
                 { aa_method::fsr, "AMD FSR (experimental)", fsr::availability() },
             };
@@ -239,7 +241,7 @@ namespace edaa
 
             if (ImGui::Button("Reset to defaults")) {
                 s.config = settings{};
-                s.pick_method = true; // DLSS, else XeSS, else TAA
+                s.pick_method = true; // DLSS, else FSR, else XeSS, else TAA
                 edit.changed = true;
             }
         }
@@ -445,7 +447,7 @@ namespace edaa
             ImGui::Separator();
             ImGui::TextUnformatted("Debug views (Ctrl+Shift+M)");
             edit(ImGui::Checkbox("Generate motion vectors", &s.config.motion_enabled));
-            ImGui::Combo("Debug view", &s.config.debug, "Off\0Motion vectors\0Vehicle mask\0Depth\0History rejection\0Moving objects\0Temporal change (flicker)\0HUD mask (upscaling)\0Reactive mask (DLSS)\0");
+            ImGui::Combo("Debug view", &s.config.debug, "Off\0Motion vectors\0Vehicle mask\0Depth\0History rejection\0Moving objects\0Temporal change (flicker)\0HUD mask (upscaling)\0Reactive mask (DLSS)\0Ship auto (green: detected, orange: stencil only)\0");
             edit(ImGui::SliderFloat("Colour saturation (px)", &s.config.debug_motion_pixels, 1.0f, 64.0f, "%.0f"));
 
             ImGui::Separator();
@@ -510,21 +512,60 @@ namespace edaa
 
     namespace
     {
-        // DLSS Frame Generation (fg_present.cpp): on/off, frame limit, status.
+        // Frame generation (fg_present.cpp): NVIDIA DLSS-G or AMD FSR FG, on/off, frame limit, status.
         void draw_frame_generation(addon_state& s, change_tracker& edit)
         {
             const fg::status st = fg::get_status();
 
-            if (edit(ImGui::Checkbox("DLSS Frame Generation (RTX 40/50, 2x)", &s.config.fg_generate)) && s.config.fg_generate) {
+            if (edit(ImGui::Checkbox("Frame Generation (2x)", &s.config.fg_generate)) && s.config.fg_generate) {
                 s.config.fg_present_test = true; // the D3D12 swap chain it needs
             }
 
+#if EDAA_VENDOR_AMD
+            ImGui::TextUnformatted("Frame generation by AMD FSR Frame Generation (experimental)");
+#else
+            // Read at game start: changing it here takes effect after a restart (no rebuild while playing).
+            const char* backends[] = { "NVIDIA DLSS-G (RTX 40/50)", "AMD FSR Frame Generation (experimental, any GPU)" };
+            int backend = s.config.fg_backend == 1 ? 1 : 0;
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18);
+
+            if (ImGui::Combo("Frame generation by", &backend, backends, 2) && backend != s.config.fg_backend) {
+                s.config.fg_backend = backend;
+                edit(true);
+            }
+#endif
+
+            const bool running_amd = st.amd, running_nv = st.streamline;
+
+            if ((s.config.fg_backend == 1 && running_nv) || (s.config.fg_backend == 0 && running_amd)) {
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "Restart the game to switch the frame generation.");
+            }
+
             edit(ImGui::Checkbox("Keep the cockpit HUD steady (no smearing in generated frames)", &s.config.fg_hud_protect));
+
+            if (s.config.fg_backend == 1) {
+                edit(ImGui::Checkbox("AMD: cockpit HUD from the newest real frame (no double HUD)", &s.config.fg_amd_hud_ui));
+                edit(ImGui::Checkbox("AMD: own ship from the newest real frame (no flicker on the hull)", &s.config.fg_amd_ship_ui));
+                edit(ImGui::Checkbox("AMD: own ship without motion (no hull flicker, no panel ghosts)", &s.config.fg_amd_ship_still));
+
+                if (s.config.fg_amd_ship_ui || s.config.fg_amd_ship_still) {
+                    edit(ImGui::Checkbox("AMD: detect own ship automatically (learns while flying)", &s.config.fg_amd_ship_auto));
+                    edit(ImGui::SliderFloat("AMD: own ship up to (m, 0 = cockpit only)", &s.config.fg_amd_ship_distance, 0.0f, 150.0f, "%.0f"));
+                    ImGui::TextDisabled("Outer hull and nose: about the visible ship length. Closer terrain stands still for AMD too.");
+                }
+
+                edit(ImGui::Checkbox("AMD: debug view in generated frames (diagnosis)", &s.config.fg_amd_debug_view));
+                ImGui::Checkbox("AMD: only generated frames (diagnosis, half frame rate, not saved)", &s.config.fg_amd_only_generated);
+
+                if ((s.config.fg_amd_hud_ui || s.config.fg_amd_ship_ui || s.config.fg_amd_ship_still) && !s.config.fg_hud_protect) {
+                    ImGui::TextDisabled("Needs \"Keep the cockpit HUD steady\".");
+                }
+            }
             ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
             edit(ImGui::SliderInt("Frame limit (displayed FPS, 0 = off)", &s.config.fg_fps_limit, 0, 360));
             ImGui::TextDisabled("Use this limit only (no external limiter): set it just below the refresh rate, e.g. 140 at 144 Hz.");
 
-            if (s.config.fg_generate && !st.streamline) {
+            if (s.config.fg_generate && !st.streamline && !st.amd) {
                 ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), st.error != nullptr ? "Stopped: %s" : "Restart the game to start frame generation.",
                     st.error != nullptr ? st.error : "");
                 return;
@@ -560,7 +601,12 @@ namespace edaa
                 ImGui::Text("Status: starting, %.0f FPS", st.real_fps);
             }
 
-            ImGui::Text("Reflex low latency: %s", st.reflex ? "on" : "off");
+            if (st.amd) {
+                ImGui::TextUnformatted("AMD FSR Frame Generation (experimental), frame limit by EDAA (no Reflex)");
+            }
+            else {
+                ImGui::Text("Reflex low latency: %s", st.reflex ? "on" : "off");
+            }
 
             if (s.config.fg_hud_protect && st.generating) {
                 ImGui::Text("HUD protection: %s", st.hud_protected ? "active" : "no HUD found this frame");

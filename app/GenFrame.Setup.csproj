@@ -6,7 +6,13 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>ED-Overdrive-FSR</AssemblyName>
+    <!-- Vendor build (edaa/docs/vendors.md): -p:Vendor=amd for the AMD app. -->
+    <Vendor Condition="'$(Vendor)' == ''">nvidia</Vendor>
+    <AssemblyName Condition="'$(Vendor)' == 'amd'">ED-Overdrive-AMD</AssemblyName>
+    <AssemblyName Condition="'$(Vendor)' != 'amd'">ED-Overdrive-FSR</AssemblyName>
+    <DefineConstants Condition="'$(Vendor)' == 'amd'">$(DefineConstants);VENDOR_AMD</DefineConstants>
+    <EdaaBundle Condition="'$(Vendor)' == 'amd'">EDAA-amd.zip</EdaaBundle>
+    <EdaaBundle Condition="'$(Vendor)' != 'amd'">EDAA.zip</EdaaBundle>
     <RootNamespace>GenFrame.Setup</RootNamespace>
     <Version>0.1.0</Version>
     <Product>ED-Overdrive</Product>
@@ -14,15 +20,15 @@
 
   <ItemGroup>
     <!-- GITC Uplift (MIT, github.com/ghostinthecamera/GITC-Uplift): shipped inside the exe, checked by hash at install. -->
-    <EmbeddedResource Include="ThirdParty\GITC-Uplift-1.8.0.zip" LogicalName="GITC-Uplift.zip" />
+    <EmbeddedResource Include="ThirdParty\GITC-Uplift-1.8.0.zip" LogicalName="GITC-Uplift.zip" Condition="'$(Vendor)' != 'amd'" />
     <!-- EDAA release (MIT; with Streamline, DLSS, XeSS and their licenses) and the ReShade add-on installer (BSD-3-Clause):
          fetched by ThirdParty\fetch-bundle.ps1 before the build, pinned by hash, not in git. -->
-    <EmbeddedResource Include="ThirdParty\EDAA.zip" LogicalName="EDAA.zip" />
+    <EmbeddedResource Include="ThirdParty\$(EdaaBundle)" LogicalName="EDAA.zip" />
     <EmbeddedResource Include="ThirdParty\ReShade_Setup_Addon.exe" LogicalName="ReShade_Setup.exe" />
   </ItemGroup>
 
   <Target Name="FetchBundle" BeforeTargets="BeforeBuild">
-    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\ThirdParty\fetch-bundle.ps1&quot;" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\ThirdParty\fetch-bundle.ps1&quot; -Vendor $(Vendor)" />
   </Target>
 
 </Project>

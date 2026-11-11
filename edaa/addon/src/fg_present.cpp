@@ -13,6 +13,9 @@
 // Streamline proxies; resolve() hands over depth and motion vectors (fg.hpp),
 // tagged for DLSS-G with the camera constants, Reflex and the PCL markers.
 // The Streamline DLLs are loaded from the add-on folder at run time.
+// fg_backend=1 (experimental): AMD FSR Frame Generation instead. AMD's frame
+// interpolation swap chain replaces ours on the child window, the same depth and
+// motion vectors go to its prepare pass, EDAA limits the real frame rate (no Reflex).
 
 #include "events.hpp"
 #include "fg.hpp"
@@ -34,6 +37,12 @@
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <wrl/client.h>
+
+#if EDAA_FSR
+#include <dx12/ffx_api_dx12.h>
+#include <ffx_framegeneration.h>
+#include <dx12/ffx_api_framegeneration_dx12.h>
+#endif
 
 #if EDAA_SL
 #include <sl.h>
@@ -106,6 +115,27 @@ namespace edaa
             const char* error = nullptr;
             bool hud_protected = false;
             bool sl_on = false; // Streamline loaded, D3D12 objects are its proxies
+            bool ffx_on = false; // AMD FSR Frame Generation: the swap chain is AMD's frame interpolation swap chain
+            bool ffx_generating = false; // frame generation enabled for the last present
+            uint64_t ffx_frame_id = 0; // +1 per present (FidelityFX requirement)
+            void* ffx_swapchain_ctx = nullptr; // ffxContext
+            void* ffx_fg_ctx = nullptr; // ffxContext
+            LARGE_INTEGER ffx_last_prepare = {};
+            // fg_amd_hud_ui: HUD layer AMD's swap chain draws over every frame (fg::build_hud_layer).
+            // Two, written alternately: AMD copies one at Present while D3D11 may write the other.
+            ComPtr<ID3D11Texture2D> layer11[2];
+            ComPtr<ID3D12Resource> layer12[2];
+            uint64_t layer_done[2] = {}; // AMD's copy of this layer ran by this value
+            int layer_write = 0; // layer the next frame writes
+            int layer_ready = -1; // layer built for the coming present (-1: none)
+            int layer_last = -1; // layer registered with the last present
+            bool layer_registered = false; // once registered, a layer stays registered (AMD waits without limit when it is dropped)
+            ComPtr<ID3D11RenderTargetView> layer_rtv[2]; // to clear a layer to transparent
+            ID3D11Texture2D* layer_rtv_tex[2] = {};
+            LARGE_INTEGER ffx_switched = {}; // last frame generation on/off switch
+            uint32_t slow_presents = 0; // AMD presents over 250 ms (logged)
+
+            bool generator() const { return sl_on || ffx_on; } // a frame generation backend runs
         };
 
         presenter p;
@@ -658,6 +688,360 @@ namespace edaa
 #endif
 
 
+#if EDAA_FSR
+        // AMD FSR Frame Generation through the FidelityFX API loader (fsr.cpp loads the same DLL).
+        struct fidelityfx
+        {
+            HMODULE module = nullptr;
+            PfnFfxCreateContext create = nullptr;
+            PfnFfxDestroyContext destroy = nullptr;
+            PfnFfxConfigure configure = nullptr;
+            PfnFfxDispatch dispatch = nullptr;
+        };
+
+        fidelityfx ffx_api;
+
+
+        bool ffx_check(const char* what, ffxReturnCode_t result)
+        {
+            if (result == FFX_API_RETURN_OK) {
+                return true;
+            }
+
+            char msg[192];
+            snprintf(msg, sizeof(msg), "EDAA FG: AMD %s failed (FidelityFX %u)", what, static_cast<unsigned>(result));
+            reshade::log::message(reshade::log::level::warning, msg);
+            return false;
+        }
+
+
+        bool ffx_start()
+        {
+            const std::wstring dll = addon_folder() + L"\\amd_fidelityfx_loader_dx12.dll";
+            ffx_api.module = LoadLibraryExW(dll.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+
+            if (ffx_api.module == nullptr) {
+                log_info("EDAA FG: amd_fidelityfx_loader_dx12.dll not found next to EDAA.addon64, AMD frame generation off");
+                return false;
+            }
+
+            ffx_api.create = reinterpret_cast<PfnFfxCreateContext>(GetProcAddress(ffx_api.module, "ffxCreateContext"));
+            ffx_api.destroy = reinterpret_cast<PfnFfxDestroyContext>(GetProcAddress(ffx_api.module, "ffxDestroyContext"));
+            ffx_api.configure = reinterpret_cast<PfnFfxConfigure>(GetProcAddress(ffx_api.module, "ffxConfigure"));
+            ffx_api.dispatch = reinterpret_cast<PfnFfxDispatch>(GetProcAddress(ffx_api.module, "ffxDispatch"));
+
+            if (!ffx_api.create || !ffx_api.destroy || !ffx_api.configure || !ffx_api.dispatch) {
+                log_info("EDAA FG: amd_fidelityfx_loader_dx12.dll is not the FidelityFX API loader, AMD frame generation off");
+                return false;
+            }
+
+            log_info("EDAA FG: AMD FSR Frame Generation selected (FidelityFX API, experimental)");
+            return true;
+        }
+
+
+        // AMD's frame interpolation swap chain on the child window (instead of a plain DXGI one).
+        bool ffx_create_swapchain(HWND child, DXGI_SWAP_CHAIN_DESC1& desc)
+        {
+            IDXGISwapChain4* raw = nullptr;
+            ffxCreateContextDescFrameGenerationSwapChainVersionDX12 sc_version = {};
+            sc_version.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATIONSWAPCHAIN_VERSION_DX12;
+            sc_version.version = FFX_FRAMEGENERATION_SWAPCHAIN_DX12_VERSION;
+
+            ffxCreateContextDescFrameGenerationSwapChainForHwndDX12 create = {};
+            create.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATIONSWAPCHAIN_FOR_HWND_DX12;
+            create.header.pNext = &sc_version.header;
+            create.swapchain = &raw;
+            create.hwnd = child;
+            create.desc = &desc;
+            create.fullscreenDesc = nullptr;
+            create.dxgiFactory = p.factory.Get();
+            create.gameQueue = p.queue.Get();
+            ffxContext ctx = nullptr;
+
+            if (!ffx_check("frame interpolation swap chain creation", ffx_api.create(&ctx, &create.header, nullptr)) || raw == nullptr) {
+                return false;
+            }
+
+            p.ffx_swapchain_ctx = ctx;
+            ComPtr<IDXGISwapChain4> swapchain;
+            swapchain.Attach(raw);
+
+            if (FAILED(swapchain.As(&p.swapchain))) {
+                return false;
+            }
+
+            log_info("EDAA FG: AMD frame interpolation swap chain created");
+            return true;
+        }
+
+
+        // The frame generation context for the swap chain's size and format (created on first use).
+        bool ffx_ensure_context()
+        {
+            if (p.ffx_fg_ctx != nullptr) {
+                return true;
+            }
+
+            static bool failed_once = false;
+
+            if (failed_once) {
+                return false;
+            }
+
+            ffxCreateContextDescFrameGenerationVersion fg_version = {};
+            fg_version.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATION_VERSION;
+            fg_version.version = FFX_FRAMEGENERATION_VERSION;
+
+            ffxCreateBackendDX12Desc backend = {};
+            backend.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_DX12;
+            backend.header.pNext = &fg_version.header;
+            backend.device = p.device12.Get();
+
+            ffxCreateContextDescFrameGeneration create = {};
+            create.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATION;
+            create.header.pNext = &backend.header;
+            create.flags = FFX_FRAMEGENERATION_ENABLE_DEPTH_INVERTED | FFX_FRAMEGENERATION_ENABLE_DEPTH_INFINITE;
+
+            if (p.format == DXGI_FORMAT_R16G16B16A16_FLOAT) {
+                create.flags |= FFX_FRAMEGENERATION_ENABLE_HIGH_DYNAMIC_RANGE;
+            }
+
+            create.displaySize = { p.width, p.height };
+            create.maxRenderSize = { p.width, p.height };
+            create.backBufferFormat = ffxApiGetSurfaceFormatDX12(p.format);
+            ffxContext ctx = nullptr;
+
+            if (!ffx_check("frame generation context creation", ffx_api.create(&ctx, &create.header, nullptr))) {
+                failed_once = true; // logged once, not every frame
+                return false;
+            }
+
+            p.ffx_fg_ctx = ctx;
+            p.ffx_frame_id = 0;
+            char msg[128];
+            snprintf(msg, sizeof(msg), "EDAA FG: AMD frame generation context created (%ux%u)", p.width, p.height);
+            log_info(msg);
+            return true;
+        }
+
+
+        std::atomic<bool> ffx_debug_view{ false }; // fg_amd_debug_view
+        std::atomic<bool> ffx_only_generated{ false }; // fg_amd_only_generated
+
+        ffxReturnCode_t ffx_generate(ffxDispatchDescFrameGeneration* params, void* user)
+        {
+            return ffx_api.dispatch(static_cast<ffxContext*>(user), &params->header);
+        }
+
+
+        // Frame generation on or off for the next present (configured every frame, as in AMD's sample).
+        void ffx_configure(bool on)
+        {
+            ffxConfigureDescFrameGeneration c = {};
+            c.header.type = FFX_API_CONFIGURE_DESC_TYPE_FRAMEGENERATION;
+            c.swapChain = p.swapchain.Get();
+            c.frameGenerationCallback = on ? ffx_generate : nullptr;
+            c.frameGenerationCallbackUserContext = on ? &p.ffx_fg_ctx : nullptr;
+            c.frameGenerationEnabled = on;
+            c.flags = ffx_debug_view.load(std::memory_order_relaxed) ? FFX_FRAMEGENERATION_FLAG_DRAW_DEBUG_VIEW : 0u;
+            c.onlyPresentGenerated = on && ffx_only_generated.load(std::memory_order_relaxed); // diagnosis: AMD's frames alone
+            c.allowAsyncWorkloads = false;
+            c.generationRect = { 0, 0, static_cast<int32_t>(p.width), static_cast<int32_t>(p.height) };
+            c.frameID = p.ffx_frame_id;
+            const ffxReturnCode_t result = ffx_api.configure(&p.ffx_fg_ctx, &c.header);
+            static int errors = 0;
+
+            if (result != FFX_API_RETURN_OK && errors < 5) {
+                ++errors;
+                ffx_check("frame generation configure", result);
+            }
+
+            if (on != p.ffx_generating) {
+                char msg[160];
+                snprintf(msg, sizeof(msg), "EDAA FG: AMD frame generation %s (inputs %ux%u, output %ux%u)", on ? "on" : "off", p.inputs.render_w,
+                    p.inputs.render_h, p.width, p.height);
+                log_info(msg);
+            }
+
+            p.ffx_generating = on;
+        }
+
+
+        // fg_amd_hud_ui: the HUD layer AMD draws over this present's frames (null: none).
+        // Registered every present: AMD forgets it once it copied it.
+        void ffx_register_layer(ID3D12Resource* layer)
+        {
+            if (p.ffx_swapchain_ctx == nullptr) {
+                return;
+            }
+
+            ffxConfigureDescFrameGenerationSwapChainRegisterUiResourceDX12 r = {};
+            r.header.type = FFX_API_CONFIGURE_DESC_TYPE_FRAMEGENERATIONSWAPCHAIN_REGISTERUIRESOURCE_DX12;
+
+            if (layer != nullptr) {
+                r.uiResource = ffxApiGetResourceDX12(layer, FFX_API_RESOURCE_STATE_COMMON);
+                r.flags = FFX_FRAMEGENERATION_UI_COMPOSITION_FLAG_ENABLE_INTERNAL_UI_DOUBLE_BUFFERING; // not premultiplied: lerp(frame, rgb, a)
+            }
+
+            const ffxReturnCode_t result = ffx_api.configure(&p.ffx_swapchain_ctx, &r.header);
+            static int errors = 0;
+            static bool logged = false;
+
+            if (result != FFX_API_RETURN_OK && errors < 5) {
+                ++errors;
+                ffx_check("HUD layer registration", result);
+            }
+            else if (result == FFX_API_RETURN_OK && layer != nullptr && !logged) {
+                logged = true;
+                log_info("EDAA FG: AMD HUD layer active (cockpit HUD from the newest real frame)");
+            }
+        }
+
+
+        void ffx_barrier(ID3D12Resource* resource, D3D12_RESOURCE_STATES from, D3D12_RESOURCE_STATES to, D3D12_RESOURCE_BARRIER& b)
+        {
+            b = {};
+            b.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            b.Transition.pResource = resource;
+            b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            b.Transition.StateBefore = from;
+            b.Transition.StateAfter = to;
+        }
+
+
+        void ffx_normalize(const float v[3], float out[3])
+        {
+            const float l = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+
+            for (int i = 0; i < 3; ++i) {
+                out[i] = l > 0 ? v[i] / l : 0.0f;
+            }
+        }
+
+
+        // Depth, motion vectors and camera of the captured frame into AMD's prepare pass, on our command list.
+        void ffx_prepare(int set)
+        {
+            const fg::frame_inputs& in = p.inputs;
+            D3D12_RESOURCE_BARRIER barriers[2];
+            ffx_barrier(p.depth12[set].Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, barriers[0]);
+            ffx_barrier(p.motion12[set].Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, barriers[1]);
+            p.list->ResourceBarrier(2, barriers);
+
+            LARGE_INTEGER now, freq;
+            QueryPerformanceCounter(&now);
+            QueryPerformanceFrequency(&freq);
+            float ms = p.ffx_last_prepare.QuadPart != 0
+                ? static_cast<float>(static_cast<double>(now.QuadPart - p.ffx_last_prepare.QuadPart) * 1000.0 / static_cast<double>(freq.QuadPart))
+                : 16.7f;
+            p.ffx_last_prepare = now;
+            ms = ms < 1.0f ? 1.0f : ms > 100.0f ? 100.0f : ms;
+
+            ffxDispatchDescFrameGenerationPrepareV2 d = {};
+            d.header.type = FFX_API_DISPATCH_DESC_TYPE_FRAMEGENERATION_PREPARE_V2;
+            d.frameID = p.ffx_frame_id;
+            d.flags = 0;
+            d.commandList = p.list.Get();
+            d.renderSize = { in.render_w, in.render_h };
+            d.jitterOffset = { in.jitter_x, in.jitter_y }; // viewport offset in pixels, as for the upscalers
+            d.motionVectorScale = { static_cast<float>(in.render_w), static_cast<float>(in.render_h) }; // UV -> pixels
+            d.frameTimeDelta = ms;
+            d.reset = in.reset;
+            d.cameraNear = in.near_plane > 0 ? in.near_plane : 0.025f;
+            d.cameraFar = 1.0e6f; // unused: infinite far plane
+            d.cameraFovAngleVertical = in.vfov_deg > 0 ? in.vfov_deg * 3.14159265f / 180.0f : 1.0f;
+            d.viewSpaceToMetersFactor = 1.0f;
+            d.depth = ffxApiGetResourceDX12(p.depth12[set].Get(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
+            d.motionVectors = ffxApiGetResourceDX12(p.motion12[set].Get(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
+            const float* m = in.view_proj;
+            const float right[3] = { m[0], m[4], m[8] }, up[3] = { m[1], m[5], m[9] }, fwd[3] = { m[3], m[7], m[11] };
+            ffx_normalize(right, d.cameraRight);
+            ffx_normalize(up, d.cameraUp);
+            ffx_normalize(fwd, d.cameraForward);
+            std::memcpy(d.cameraPosition, in.camera_pos, sizeof(d.cameraPosition));
+            const ffxReturnCode_t result = ffx_api.dispatch(&p.ffx_fg_ctx, &d.header);
+            static int errors = 0;
+
+            if (result != FFX_API_RETURN_OK && errors < 5) {
+                ++errors;
+                ffx_check("frame generation prepare", result);
+            }
+
+            ffx_barrier(p.depth12[set].Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COMMON, barriers[0]);
+            ffx_barrier(p.motion12[set].Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COMMON, barriers[1]);
+            p.list->ResourceBarrier(2, barriers);
+        }
+
+
+        // Frame generation off and its context gone (before a resize or the shutdown).
+        void ffx_destroy_context()
+        {
+            if (p.ffx_fg_ctx != nullptr) {
+                ffx_configure(false);
+                ffxContext ctx = p.ffx_fg_ctx;
+                ffx_api.destroy(&ctx, nullptr);
+                p.ffx_fg_ctx = nullptr;
+                p.ffx_generating = false;
+            }
+        }
+
+
+        // AMD's contexts before the swap chain they wrap.
+        void ffx_shutdown()
+        {
+            ffx_destroy_context();
+            p.swapchain.Reset();
+
+            if (p.ffx_swapchain_ctx != nullptr) {
+                ffxContext ctx = p.ffx_swapchain_ctx;
+                ffx_api.destroy(&ctx, nullptr);
+                p.ffx_swapchain_ctx = nullptr;
+            }
+
+            p.ffx_on = false;
+        }
+#endif
+
+
+        // EDAA's own frame limiter where Reflex is not there (AMD frame generation):
+        // the real frames, at half the displayed limit while frames are generated.
+        void limit_frame_rate(int fps)
+        {
+            static LARGE_INTEGER next = {};
+
+            if (fps <= 0) {
+                next.QuadPart = 0;
+                return;
+            }
+
+            LARGE_INTEGER freq, now;
+            QueryPerformanceFrequency(&freq);
+            QueryPerformanceCounter(&now);
+            const int64_t interval = freq.QuadPart / fps;
+
+            if (next.QuadPart == 0 || now.QuadPart - next.QuadPart > interval * 4) {
+                next.QuadPart = now.QuadPart + interval; // start, or far behind (loading): no catch-up burst
+                return;
+            }
+
+            while (now.QuadPart < next.QuadPart) {
+                const int64_t left_ms = (next.QuadPart - now.QuadPart) * 1000 / freq.QuadPart;
+
+                if (left_ms > 2) {
+                    Sleep(static_cast<DWORD>(left_ms - 2));
+                }
+                else {
+                    YieldProcessor();
+                }
+
+                QueryPerformanceCounter(&now);
+            }
+
+            next.QuadPart += interval;
+        }
+
+
         LRESULT CALLBACK child_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         {
             switch (msg) {
@@ -921,6 +1305,11 @@ namespace edaa
             const UINT flags = p.tearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
 
             if (p.swapchain) {
+#if EDAA_FSR
+                if (p.ffx_on) {
+                    ffx_destroy_context(); // made for the old size, created again on the next present
+                }
+#endif
                 if (fail("swap chain resize failed", p.swapchain->ResizeBuffers(buffer_count, width, height, format, flags))) {
                     return false;
                 }
@@ -938,9 +1327,22 @@ namespace edaa
                 sc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
                 sc.Flags = flags;
                 ComPtr<IDXGISwapChain1> swapchain1;
+                bool created = false;
 
-                if (fail("D3D12 swap chain creation failed", p.factory->CreateSwapChainForHwnd(p.queue.Get(), child, &sc, nullptr, nullptr, &swapchain1)) ||
-                    fail("D3D12 swap chain has no IDXGISwapChain3", swapchain1.As(&p.swapchain))) {
+#if EDAA_FSR
+                if (p.ffx_on) {
+                    created = ffx_create_swapchain(child, sc);
+
+                    if (!created) {
+                        log_info("EDAA FG: no AMD frame interpolation swap chain, presenting without frame generation");
+                        p.ffx_on = false;
+                    }
+                }
+#endif
+
+                if (!created &&
+                    (fail("D3D12 swap chain creation failed", p.factory->CreateSwapChainForHwnd(p.queue.Get(), child, &sc, nullptr, nullptr, &swapchain1)) ||
+                        fail("D3D12 swap chain has no IDXGISwapChain3", swapchain1.As(&p.swapchain)))) {
                     return false;
                 }
 
@@ -1019,7 +1421,7 @@ namespace edaa
         }
 
 
-        void present_frame(effect_runtime* runtime, int variant, bool generate, int fps_limit)
+        void present_frame(effect_runtime* runtime, int variant, bool generate, int fps_limit, int backend)
         {
             auto* const device = reinterpret_cast<ID3D11Device*>(runtime->get_device()->get_native());
             auto* const ctx = reinterpret_cast<ID3D11DeviceContext*>(runtime->get_command_queue()->get_immediate_command_list()->get_native());
@@ -1039,7 +1441,12 @@ namespace edaa
             if (p.device12 == nullptr) {
                 p.parent = static_cast<HWND>(runtime->get_hwnd());
 #if EDAA_SL
-                p.sl_on = generate && sl_start();
+                p.sl_on = generate && backend == 0 && sl_start();
+#endif
+#if EDAA_FSR
+                p.ffx_on = generate && backend == 1 && ffx_start();
+#else
+                (void)backend;
 #endif
 
                 if (!create_factory(variant) || !create_device(device, fps_limit) || !create_child(p.parent, bb.Width, bb.Height)) {
@@ -1133,6 +1540,49 @@ namespace edaa
             }
 #endif
 
+#if EDAA_FSR
+            // AMD frame generation: configured for this present, prepared with this frame's inputs.
+            if (p.ffx_on) {
+                p.stale_frames = p.inputs_fresh || p.resolve_seen ? 0 : p.stale_frames + 1;
+                const int set = p.ready_set;
+                const bool possible = set >= 0 && p.depth12[set] && p.motion12[set] && p.inputs.render_w > 0 && ffx_ensure_context();
+                const bool wanted = generate && p.stale_frames < 120;
+                // Switching AMD's interpolation on or off stops or starts its present
+                // threads: at most every half second (a hang was seen right after a quick off).
+                LARGE_INTEGER now, freq;
+                QueryPerformanceCounter(&now);
+                QueryPerformanceFrequency(&freq);
+                const bool hold = p.ffx_switched.QuadPart != 0 && now.QuadPart - p.ffx_switched.QuadPart < freq.QuadPart / 2;
+                const bool on = possible && (hold ? p.ffx_generating : wanted);
+
+                if (p.ffx_fg_ctx != nullptr) {
+                    p.inputs.reset = p.inputs.reset || !p.inputs_fresh;
+
+                    if (on != p.ffx_generating) {
+                        p.ffx_switched = now;
+                    }
+
+                    ffx_configure(on);
+
+                    if (on) {
+                        ffx_prepare(set);
+                    }
+
+                    ++p.ffx_frame_id;
+                }
+
+                // Once registered, always a layer (transparent when there is nothing to show):
+                // dropping it makes AMD free its copy and wait for all frames without limit.
+                const int layer = p.layer_ready >= 0 ? p.layer_ready : p.layer_registered ? p.layer_last : -1;
+
+                if (layer >= 0 && p.layer12[layer]) {
+                    ffx_register_layer(p.layer12[layer].Get());
+                    p.layer_registered = true;
+                    p.layer_last = layer;
+                }
+            }
+#endif
+
             D3D12_RESOURCE_BARRIER barrier = {};
             barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
             barrier.Transition.pResource = target.Get();
@@ -1172,13 +1622,38 @@ namespace edaa
             }
 #endif
 
+            LARGE_INTEGER present_start;
+            QueryPerformanceCounter(&present_start);
             const HRESULT presented = p.swapchain->Present(0, p.tearing ? DXGI_PRESENT_ALLOW_TEARING : 0);
+
+#if EDAA_FSR
+            if (p.ffx_on) {
+                LARGE_INTEGER present_end, present_freq;
+                QueryPerformanceCounter(&present_end);
+                QueryPerformanceFrequency(&present_freq);
+                const double ms = static_cast<double>(present_end.QuadPart - present_start.QuadPart) * 1000.0 / static_cast<double>(present_freq.QuadPart);
+
+                if (ms > 250.0 && p.slow_presents < 20) {
+                    ++p.slow_presents;
+                    char msg[200];
+                    snprintf(msg, sizeof(msg), "EDAA FG: AMD present took %.0f ms (frame %llu, generating %d, layer %d)", ms,
+                        static_cast<unsigned long long>(p.frames), p.ffx_generating ? 1 : 0, p.layer_registered ? p.layer_last : -1);
+                    reshade::log::message(reshade::log::level::warning, msg);
+                }
+            }
+#endif
 
             // The shared textures are free again once the present work (and frame generation) ran.
             p.copy_done = ++p.fence_value;
             p.queue->Signal(p.fence12.Get(), p.copy_done);
             p.inputs_fresh = false;
             p.resolve_seen = false;
+
+            if (p.layer_ready >= 0) {
+                p.layer_done[p.layer_ready] = p.copy_done; // AMD copied it on the queue during Present
+                p.layer_write = 1 - p.layer_ready;
+                p.layer_ready = -1;
+            }
 
 #if EDAA_SL
             if (p.sl_on) {
@@ -1213,8 +1688,8 @@ namespace edaa
 
         void on_reshade_present_fg(effect_runtime* runtime)
         {
-            bool enabled, generate, hud_protect;
-            int variant, fps_limit;
+            bool enabled, generate, hud_protect, hud_layer, ship_layer, ship_still;
+            int variant, fps_limit, backend;
             {
                 addon_state& s = state();
                 const std::lock_guard<std::recursive_mutex> lock(s.mutex);
@@ -1223,6 +1698,14 @@ namespace edaa
                 variant = s.config.fg_factory;
                 fps_limit = s.config.fg_fps_limit;
                 hud_protect = s.config.fg_hud_protect;
+                backend = s.config.fg_backend;
+                hud_layer = s.config.fg_amd_hud_ui;
+                ship_layer = s.config.fg_amd_ship_ui;
+                ship_still = s.config.fg_amd_ship_still;
+#if EDAA_FSR
+                ffx_debug_view = s.config.fg_amd_debug_view;
+                ffx_only_generated = s.config.fg_amd_only_generated;
+#endif
             }
 
             // The runtime ReShade adds on our D3D12 swap chain presents too: ignore it.
@@ -1238,19 +1721,79 @@ namespace edaa
             if (enabled && generate && hud_protect) {
                 const std::lock_guard<std::mutex> lock(presenter_mutex);
 
-                if (p.sl_on && !p.failed && p.inputs_fresh && p.ready_set >= 0) {
+                if (p.generator() && !p.failed && p.inputs_fresh && p.ready_set >= 0) {
                     hud_target = p.motion11[p.ready_set];
                 }
+
+                ship_still = ship_still && p.ffx_on; // AMD only
             }
 
             bool hud_done = false;
 
+#if EDAA_FSR
+            // AMD: the HUD layer, before apply_hud_motion (which uses up this frame's HUD mask).
+            ComPtr<ID3D11Texture2D> layer;
+            int layer_slot = -1;
+            auto* const back_buffer = reinterpret_cast<ID3D11Texture2D*>(runtime->get_current_back_buffer().handle);
+            DXGI_FORMAT view_format = DXGI_FORMAT_UNKNOWN;
+
+            if (hud_target && (hud_layer || ship_layer) && back_buffer != nullptr) {
+                D3D11_TEXTURE2D_DESC bb = {};
+                back_buffer->GetDesc(&bb);
+                view_format = plain_format(bb.Format);
+                const std::lock_guard<std::mutex> lock(presenter_mutex);
+                const int slot = p.layer_write;
+
+                // Typed sRGB back buffers would need another view: no layer (the HUD as before).
+                if (p.ffx_on && p.ffx_generating && p.shared11 && bb.Format != DXGI_FORMAT_R8G8B8A8_UNORM_SRGB &&
+                    bb.Format != DXGI_FORMAT_B8G8R8A8_UNORM_SRGB && share_input(p.shared11.Get(), p.layer11[slot], p.layer12[slot]) &&
+                    wait_for(p.layer_done[slot], 0)) {
+                    layer = p.layer11[slot];
+                    layer_slot = slot;
+                }
+            }
+#endif
+
+            bool layer_built = false;
+
             if (hud_target) {
                 auto* const ctx = reinterpret_cast<ID3D11DeviceContext*>(runtime->get_command_queue()->get_immediate_command_list()->get_native());
-                hud_done = fg::apply_hud_motion(ctx, hud_target.Get());
+#if EDAA_FSR
+                layer_built = layer && fg::build_hud_layer(ctx, back_buffer, view_format, layer.Get(), hud_layer, ship_layer);
+#endif
+                hud_done = fg::apply_hud_motion(ctx, hud_target.Get(), ship_still);
             }
 
             const std::lock_guard<std::mutex> lock(presenter_mutex);
+#if EDAA_FSR
+            p.layer_ready = layer_built ? layer_slot : -1;
+
+            // Nothing to show this frame, but a layer stays registered: a transparent one.
+            // (If both are still in use, the last one is registered again.)
+            if (!layer_built && p.layer_registered && p.ffx_on && !p.failed && p.shared11) {
+                const int slot = p.layer_write;
+                auto* const ctx = reinterpret_cast<ID3D11DeviceContext*>(runtime->get_command_queue()->get_immediate_command_list()->get_native());
+
+                if (share_input(p.shared11.Get(), p.layer11[slot], p.layer12[slot]) && wait_for(p.layer_done[slot], 0)) {
+                    if (p.layer_rtv_tex[slot] != p.layer11[slot].Get() || !p.layer_rtv[slot]) {
+                        p.layer_rtv[slot].Reset();
+                        p.layer_rtv_tex[slot] = nullptr;
+
+                        if (SUCCEEDED(p.device11->CreateRenderTargetView(p.layer11[slot].Get(), nullptr, &p.layer_rtv[slot]))) {
+                            p.layer_rtv_tex[slot] = p.layer11[slot].Get();
+                        }
+                    }
+
+                    if (p.layer_rtv[slot]) {
+                        const float transparent[4] = {};
+                        ctx->ClearRenderTargetView(p.layer_rtv[slot].Get(), transparent);
+                        p.layer_ready = slot;
+                    }
+                }
+            }
+#else
+            (void)layer_built;
+#endif
 
             if (hud_target || !hud_protect || !generate) {
                 p.hud_protected = hud_done;
@@ -1265,10 +1808,16 @@ namespace edaa
             }
 
             try {
-                present_frame(runtime, variant, generate, fps_limit);
-                inputs_wanted = p.sl_on && generate && !p.failed;
+#if EDAA_FSR
+                // No Reflex with AMD frame generation: EDAA limits the real frames itself.
+                if (p.ffx_on && !p.failed) {
+                    limit_frame_rate(p.ffx_generating ? fps_limit / 2 : fps_limit);
+                }
+#endif
+                present_frame(runtime, variant, generate, fps_limit, backend);
+                inputs_wanted = p.generator() && generate && !p.failed;
                 // The game's own present follows right after this event.
-                serialize_presents = p.sl_on && !p.failed;
+                serialize_presents = p.generator() && !p.failed;
                 serial_lock();
             }
             catch (...) {
@@ -1307,6 +1856,11 @@ namespace edaa
 
             inputs_wanted = false;
             serialize_presents = false;
+#if EDAA_FSR
+            if (p.ffx_on) {
+                ffx_shutdown(); // AMD's contexts before the swap chain they wrap
+            }
+#endif
             p.swapchain.Reset();
             p.factory.Reset();
             p.shared12.Reset();
@@ -1317,6 +1871,20 @@ namespace edaa
                 p.motion12[i].Reset();
                 p.motion11[i].Reset();
                 p.set_done[i] = 0;
+                p.layer12[i].Reset();
+                p.layer11[i].Reset();
+                p.layer_done[i] = 0;
+            }
+
+            p.layer_write = 0;
+            p.layer_ready = -1;
+            p.layer_last = -1;
+            p.layer_registered = false;
+            p.ffx_switched = {};
+
+            for (int i = 0; i < 2; ++i) {
+                p.layer_rtv[i].Reset();
+                p.layer_rtv_tex[i] = nullptr;
             }
 
             p.write_set = 0;
@@ -1372,6 +1940,7 @@ namespace edaa
         status st;
         st.d3d12_path = p.swapchain != nullptr && !p.failed;
         st.streamline = p.sl_on;
+        st.amd = p.ffx_on;
         st.reflex = p.sl_on && p.fps_limit >= 0;
         st.background = !p.focus;
         st.waiting = p.stale_frames >= 120;
@@ -1379,7 +1948,8 @@ namespace edaa
 #if EDAA_SL
         st.generating = st.d3d12_path && p.sl_on && sl_api.dlssg_on && p.presented > 1;
 #endif
-        st.shown_fps = p.real_fps * static_cast<float>(st.generating ? p.presented : 1);
+        st.generating = st.generating || (st.d3d12_path && p.ffx_on && p.ffx_generating);
+        st.shown_fps = p.real_fps * static_cast<float>(st.generating ? (p.ffx_on ? 2u : p.presented) : 1u);
         st.dlssg_status = p.dlssg_status;
         st.hud_protected = p.hud_protected;
         st.error = p.error;
@@ -1397,7 +1967,7 @@ namespace edaa
     {
         const std::lock_guard<std::mutex> lock(presenter_mutex);
 
-        if (!p.sl_on || p.failed || p.device11_5 == nullptr || depth == nullptr || motion == nullptr) {
+        if (!p.generator() || p.failed || p.device11_5 == nullptr || depth == nullptr || motion == nullptr) {
             return;
         }
 
@@ -1436,7 +2006,7 @@ namespace edaa
 
     namespace
     {
-        // Present of our D3D12 swap chain, from whichever thread Streamline uses.
+        // Present of our D3D12 swap chain, from whichever thread Streamline or AMD's swap chain uses.
         void on_present_fg(command_queue*, swapchain* swapchain, const rect*, const rect*, uint32_t, const rect*)
         {
             const HWND child = p.child.load();

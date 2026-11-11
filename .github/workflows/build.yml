@@ -38,6 +38,11 @@ jobs:
           cmake --build edaa/build --config Release
           if ($LASTEXITCODE -ne 0) { exit 1 }
           ./edaa/tools/bundle.ps1 -Release edaa/build/Release -Out app/ThirdParty/EDAA.zip -Version $v
+          # AMD build (edaa/docs/vendors.md): without DLSS, DLSS-G and Reflex.
+          cmake -S edaa -B edaa/build-amd -G "Visual Studio 17 2022" -A x64 "-DEDAA_VERSION=$v" -DEDAA_VENDOR=amd
+          cmake --build edaa/build-amd --config Release
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          ./edaa/tools/bundle.ps1 -Release edaa/build-amd/Release -Out app/ThirdParty/EDAA-amd.zip -Version $v -Vendor amd
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -45,7 +50,13 @@ jobs:
 
       - name: Build app
         shell: pwsh
-        run: dotnet publish app/GenFrame.Setup.csproj -p:PublishProfile=Release
+        run: |
+          dotnet publish app/GenFrame.Setup.csproj -p:PublishProfile=Release -p:Vendor=nvidia
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          # The AMD app: other constants and resources, so a fresh obj folder.
+          Remove-Item -Recurse -Force app/obj
+          dotnet publish app/GenFrame.Setup.csproj -p:PublishProfile=Release -p:Vendor=amd
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Publish add-on to builds/main
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -70,5 +81,7 @@ jobs:
           name: ED-Overdrive
           path: |
             app/bin/publish/ED-Overdrive-FSR.exe
+            app/bin/publish/ED-Overdrive-AMD.exe
             app/ThirdParty/EDAA.zip
+            app/ThirdParty/EDAA-amd.zip
           retention-days: 7

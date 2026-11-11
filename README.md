@@ -2,6 +2,8 @@
 
 > **Experimenteller Zweig (privat).** Diese Fassung bringt zusätzlich **AMD FSR 4 / 3.1** als Methode in EDAA:
 > FSR 4 auf Radeon RX 6000 und neuer, auf allen anderen Karten (auch NVIDIA) FSR 3.1 – die Wahl trifft AMDs DLL.
+> Dazu **AMD FSR Frame Generation** als zweites FG-Verfahren (läuft auf jeder D3D12-Karte, eigenes Bildlimit statt Reflex).
+> Auf Radeon-Karten stellt die App FSR und FSR FG automatisch ein.
 > Die exe heißt `ED-Overdrive-FSR.exe`, der Kanal „Entwicklung“ ist hier abgeschaltet. FSR 4 ist bisher nicht auf
 > einer Radeon getestet.
 
@@ -20,7 +22,7 @@ herunterladen und starten. Die App bringt .NET mit.
 | EDAA (Add-on, Quellcode in [`edaa/`](edaa)) | ✅ | MIT |
 | NVIDIA Streamline, DLSS (Super Resolution, Frame Generation) | ✅ als Teil von EDAA | NVIDIA RTX SDK / NGX SDK |
 | Intel XeSS | ✅ als Teil von EDAA | Intel Simplified Software License |
-| AMD FSR 4 / 3.1 (FidelityFX SDK 2.4.0, signierte AMD-DLLs) | ✅ als Teil von EDAA | AMD FidelityFX License (nur als Binärdatei, kein Reverse Engineering) |
+| AMD FSR 4 / 3.1 und FSR Frame Generation (FidelityFX SDK 2.4.0, signierte AMD-DLLs) | ✅ als Teil von EDAA | AMD FidelityFX License (nur als Binärdatei, kein Reverse Engineering) |
 | GITC Uplift 1.8.0 (DLSS 5) | ✅ | MIT |
 | Filter-Shader (Deband, CAS, Vibrance, Fake-HDR, LUT, LocalContrast, Schwarzwert-Fix …) | ❌ werden beim Einrichten aus den Original-Repos der Autoren geladen | MIT, CC0, GPL-3.0 (je Shader) |
 | qUINT (MXAO, Bloom, DOF) | ❌ optionaler Download | „All rights reserved“, darf nicht mitgeliefert werden |

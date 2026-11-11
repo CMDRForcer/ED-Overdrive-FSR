@@ -24,7 +24,9 @@ static class ModesPage
         page.Children.Add(Ui.Muted("Ein Klick setzt alle nötigen Werte, Filter und Feineinstellungen bleiben. " +
             "Gilt ab dem nächsten Spielstart, Elite muss dafür geschlossen sein."));
 
-        page.Children.Add(SetupSection(window, game));
+        if (Vendor.Nvidia) {
+            page.Children.Add(SetupSection(window, game)); // DLAA and DLSS 5
+        }
 
         var modesTitle = Ui.Text("EDAA-Modus", Ui.Brush("AccentBrush"));
         modesTitle.Margin = new Thickness(0, 16, 0, 4);
@@ -32,10 +34,14 @@ static class ModesPage
 
         var current = AddonSettings.CurrentMode(game);
         var cards = new WrapPanel();
-        cards.Children.Add(Card(window, game, QuickMode.DlaaFg, "DLAA + FG", "Beste Bildqualität mit verdoppelter Bildrate. RTX 40/50.", current));
-        cards.Children.Add(Card(window, game, QuickMode.Dlaa, "Nur DLAA", "Kantenglättung von NVIDIA, ohne generierte Bilder.", current));
-        cards.Children.Add(Card(window, game, QuickMode.TaaFg, "Nur FG", "Kantenglättung mit TAA statt DLAA. Noch nicht im Spiel geprüft.", current));
+        if (Vendor.Nvidia) {
+            cards.Children.Add(Card(window, game, QuickMode.DlaaFg, "DLAA + FG", "Beste Bildqualität mit verdoppelter Bildrate. RTX 40/50.", current));
+            cards.Children.Add(Card(window, game, QuickMode.Dlaa, "Nur DLAA", "Kantenglättung von NVIDIA, ohne generierte Bilder.", current));
+            cards.Children.Add(Card(window, game, QuickMode.TaaFg, "Nur FG", "Kantenglättung mit TAA statt DLAA. Noch nicht im Spiel geprüft.", current));
+        }
         cards.Children.Add(Card(window, game, QuickMode.Fsr, "AMD FSR (experimentell)", "FSR 4 auf Radeon RX 6000 und neuer, sonst FSR 3.1. Ohne FG.", current));
+        cards.Children.Add(Card(window, game, QuickMode.FsrFg, "FSR + FSR FG (experimentell)",
+            Vendor.Amd ? "AMD FSR mit AMD Frame Generation." : "AMD FSR mit AMD Frame Generation. Für Radeon sowie RTX 20/30.", current));
         cards.Children.Add(Card(window, game, QuickMode.Off, "Aus", "Keine Kantenglättung und kein FG. Die ReShade-Filter bleiben.", current));
         page.Children.Add(cards);
 
