@@ -107,10 +107,32 @@ motion_output ps_motion(float4 pos : SV_Position)
     // Its edges stay undecided (the jitter moves them across the silhouette): a pixel
     // up to 2 pixels from a detected one, at about its distance (not the world
     // behind), counts too.
-    // 0.4: AMD frame generation only; 1 with aa_ship_steady (vehicle_on.z = 2).
-    const float ship_value = vehicle_on.z > 1.5 ? 1 : 0.4;
+    // 0.4: AMD frame generation only.
+    const float ship_value = 0.4;
 
-    if (o.mask == 0 && vehicle_on.z > 0 && depth > 0) {
+    // aa_ship_steady (vehicle_on.z = 2): the distance of the ship learned per
+    // pixel (t5.y, ps_ship_auto), its largest value up to 2 pixels around (the
+    // jitter moves the silhouette). Not farther than that is the ship; the world
+    // behind an edge is farther and stays world (no flicker at the edges).
+    if (o.mask == 0 && vehicle_on.z > 1.5 && depth > 0) {
+        const float view_z = params.z / depth;
+        float learned = 0;
+
+        // clang-format off
+        [unroll] for (int y = -2; y <= 2; ++y) {
+            [unroll] for (int x = -2; x <= 2; ++x) {
+                const int3 q = int3(clamp(int2(pos.xy) + int2(x, y), int2(0, 0), int2(render_size.xy) - 1), 0);
+                learned = max(learned, prev_history_tex.Load(q).y);
+            }
+        }
+        // clang-format on
+
+        if (learned > 0 && view_z < learned * 1.03 + 0.5) {
+            o.mask = 1;
+        }
+    }
+
+    if (o.mask == 0 && vehicle_on.z > 0 && vehicle_on.z < 1.5 && depth > 0) {
         if (mask_tex.Load(int3(pos.xy, 0)) > 0.5) {
             o.mask = ship_value;
         }
@@ -168,11 +190,17 @@ motion_output ps_motion(float4 pos : SV_Position)
 // motion when it is unknown) and the depth found there is compared with the depth
 // each prediction expects. Only a clear answer (one fits, the other does not)
 // moves the score; otherwise (camera still, flat ground in level flight) it keeps
-// the last value. Inputs: t0 depth, t2 last score, t5.x last depth (R32_FLOAT).
+// the last value. Inputs: t0 depth, t2 last score, t5.xy last depth and learned
+// ship distance (R32G32_FLOAT).
+// Learned ship distance (aa_ship_steady, ps_motion): where a pixel clearly moved
+// with the camera (and its score agrees), the ship is at least this far away
+// there (view metres, at most 250). It forgets slowly (a few minutes), at once
+// when something clearly in the world is closer, and is cleared with the score
+// (switch off, on foot).
 struct ship_auto_output
 {
     float score : SV_Target0; // 1 = moves with the camera (own ship)
-    float depth : SV_Target1; // this frame's depth, for the next frame
+    float2 depth : SV_Target1; // x: this frame's depth, y: learned ship distance (m), for the next frame
 };
 
 // Relative depth error of the best match around the predicted position (3x3
@@ -216,14 +244,17 @@ ship_auto_output ps_ship_auto(float4 pos : SV_Position)
     const int3 p = int3(pos.xy, 0);
     const float depth = scene_depth.Load(p);
     const float last = mask_tex.Load(p);
+    const float learned = prev_history_tex.Load(p).y * 0.99997;
     ship_auto_output o;
-    o.depth = depth;
+    o.depth = float2(depth, learned);
     o.score = last;
 
     if (depth <= 0) {
         o.score = 0; // sky
         return o;
     }
+
+    const float view_z = params.z / depth;
 
     const float2 uv = pos.xy * render_size.zw - params.xy;
     const float2 ndc = float2(uv.x * 2 - 1, 1 - uv.y * 2);
@@ -258,9 +289,17 @@ ship_auto_output ps_ship_auto(float4 pos : SV_Position)
 
     if (ship_error < tolerance && world_error > 4 * tolerance) {
         o.score = lerp(last, 1, rate);
+
+        if (o.score > 0.5 && view_z < 250) {
+            o.depth.y = max(learned, view_z);
+        }
     }
     else if (world_error < tolerance && ship_error > 4 * tolerance) {
         o.score = lerp(last, 0, rate);
+
+        if (view_z < learned * 1.03 + 0.5) {
+            o.depth.y = 0; // the world is closer than the learned ship: wrong here
+        }
     }
 
     return o;

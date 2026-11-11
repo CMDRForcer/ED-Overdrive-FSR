@@ -990,7 +990,7 @@ namespace edaa
 
                 for (int i = 0; i < 2 && ready; ++i) {
                     ready = (gpu.ship_score[i].tex || create_target(DXGI_FORMAT_R16_FLOAT, gpu.ship_score[i])) &&
-                        (gpu.ship_depth[i].tex || create_target(DXGI_FORMAT_R32_FLOAT, gpu.ship_depth[i]));
+                        (gpu.ship_depth[i].tex || create_target(DXGI_FORMAT_R32G32_FLOAT, gpu.ship_depth[i]));
                 }
 
                 if (ready) {
@@ -1025,7 +1025,9 @@ namespace edaa
                 ID3D11RenderTargetView* const motion_targets[] = { gpu.motion.rtv.Get(), gpu.mask.rtv.Get() };
                 ctx->OMSetRenderTargets(2, motion_targets, nullptr);
                 ID3D11ShaderResourceView* const ship_score = ship_auto_on && gpu.ship_valid ? gpu.ship_score[gpu.ship_index].srv.Get() : nullptr;
-                bind_srvs(ctx, { gpu.depth.srv.Get(), nullptr, ship_score, nullptr, gpu.stencil_srv.Get() });
+                // aa_ship_steady: the learned ship distance (t5.y).
+                ID3D11ShaderResourceView* const ship_learned = aa_ship && gpu.ship_valid ? gpu.ship_depth[gpu.ship_index].srv.Get() : nullptr;
+                bind_srvs(ctx, { gpu.depth.srv.Get(), nullptr, ship_score, nullptr, gpu.stencil_srv.Get(), ship_learned });
                 ctx->PSSetShader(gpu.ps_motion.Get(), nullptr, 0);
                 ctx->Draw(3, 0);
             }
