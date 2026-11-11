@@ -1686,7 +1686,7 @@ namespace edaa
 
         void on_reshade_present_fg(effect_runtime* runtime)
         {
-            bool enabled, generate, hud_protect, hud_layer, ship_layer;
+            bool enabled, generate, hud_protect, hud_layer, ship_layer, ship_still;
             int variant, fps_limit, backend;
             {
                 addon_state& s = state();
@@ -1699,6 +1699,7 @@ namespace edaa
                 backend = s.config.fg_backend;
                 hud_layer = s.config.fg_amd_hud_ui;
                 ship_layer = s.config.fg_amd_ship_ui;
+                ship_still = s.config.fg_amd_ship_still;
 #if EDAA_FSR
                 ffx_debug_view = s.config.fg_amd_debug_view;
 #endif
@@ -1720,6 +1721,8 @@ namespace edaa
                 if (p.generator() && !p.failed && p.inputs_fresh && p.ready_set >= 0) {
                     hud_target = p.motion11[p.ready_set];
                 }
+
+                ship_still = ship_still && p.ffx_on; // AMD only
             }
 
             bool hud_done = false;
@@ -1755,7 +1758,7 @@ namespace edaa
 #if EDAA_FSR
                 layer_built = layer && fg::build_hud_layer(ctx, back_buffer, view_format, layer.Get(), hud_layer, ship_layer);
 #endif
-                hud_done = fg::apply_hud_motion(ctx, hud_target.Get());
+                hud_done = fg::apply_hud_motion(ctx, hud_target.Get(), ship_still);
             }
 
             const std::lock_guard<std::mutex> lock(presenter_mutex);

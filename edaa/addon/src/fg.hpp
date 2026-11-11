@@ -47,7 +47,9 @@ namespace edaa::fg
 
     // passes.cpp, at Present: rewrite 'target' (the shared motion vectors) with
     // the cockpit HUD standing still, from this frame's HUD mask. False if none.
-    bool apply_hud_motion(ID3D11DeviceContext* ctx, ID3D11Texture2D* target);
+    // 'ship_still' (AMD, fg_amd_ship_still): the player's own ship stands still too,
+    // also in frames without a HUD mask. True if the HUD mask was applied.
+    bool apply_hud_motion(ID3D11DeviceContext* ctx, ID3D11Texture2D* target, bool ship_still);
 
     // passes.cpp, at Present, before apply_hud_motion: AMD frame generation's HUD
     // layer in 'target' (back buffer size and format): the back buffer where the

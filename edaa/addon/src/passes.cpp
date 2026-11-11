@@ -1812,19 +1812,25 @@ namespace edaa
     }
 
 
-    bool fg::apply_hud_motion(ID3D11DeviceContext* ctx, ID3D11Texture2D* target)
+    bool fg::apply_hud_motion(ID3D11DeviceContext* ctx, ID3D11Texture2D* target, bool ship_still)
     {
         try {
             const std::lock_guard<std::mutex> lock(gpu_mutex);
             ComPtr<ID3D11Device> device;
             ctx->GetDevice(&device);
 
-            if (!fg_mask_valid || !upscale_in.hud_mask || device.Get() != gpu.device || !gpu.hud_mask.srv || !gpu.motion.srv || !gpu.ps_fg_motion) {
+            if (device.Get() != gpu.device || !gpu.motion.srv || !gpu.ps_fg_motion || !gpu.ps_fg_motion_keep) {
                 fg_mask_valid = false;
                 return false;
             }
 
+            const bool hud_ok = fg_mask_valid && upscale_in.hud_mask && gpu.hud_mask.srv;
+            const bool ship_ok = ship_still && gpu.mask.srv;
             fg_mask_valid = false;
+
+            if (!hud_ok && !ship_ok) {
+                return false;
+            }
             D3D11_TEXTURE2D_DESC desc;
             target->GetDesc(&desc);
 
@@ -1850,11 +1856,11 @@ namespace edaa
             bind_srvs(ctx, {});
             ID3D11RenderTargetView* const targets[] = { fg_motion_rtv.Get() };
             ctx->OMSetRenderTargets(1, targets, nullptr);
-            bind_srvs(ctx, { nullptr, nullptr, gpu.motion.srv.Get(), nullptr, gpu.hud_mask.srv.Get() });
-            ctx->PSSetShader(hud_motion_done && gpu.ps_fg_motion_keep ? gpu.ps_fg_motion_keep.Get() : gpu.ps_fg_motion.Get(), nullptr, 0);
+            bind_srvs(ctx, { nullptr, nullptr, gpu.motion.srv.Get(), nullptr, hud_ok ? gpu.hud_mask.srv.Get() : nullptr, ship_ok ? gpu.mask.srv.Get() : nullptr });
+            ctx->PSSetShader(hud_ok && !hud_motion_done ? gpu.ps_fg_motion.Get() : gpu.ps_fg_motion_keep.Get(), nullptr, 0);
             ctx->Draw(3, 0);
             bind_srvs(ctx, {});
-            return true;
+            return hud_ok;
         }
         catch (...) {
             return false;

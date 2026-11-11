@@ -540,9 +540,10 @@ namespace edaa
             if (s.config.fg_backend == 1) {
                 edit(ImGui::Checkbox("AMD: cockpit HUD from the newest real frame (no double HUD)", &s.config.fg_amd_hud_ui));
                 edit(ImGui::Checkbox("AMD: own ship from the newest real frame (no flicker on the hull)", &s.config.fg_amd_ship_ui));
+                edit(ImGui::Checkbox("AMD: own ship without motion (no hull flicker, no panel ghosts)", &s.config.fg_amd_ship_still));
                 edit(ImGui::Checkbox("AMD: debug view in generated frames (diagnosis)", &s.config.fg_amd_debug_view));
 
-                if ((s.config.fg_amd_hud_ui || s.config.fg_amd_ship_ui) && !s.config.fg_hud_protect) {
+                if ((s.config.fg_amd_hud_ui || s.config.fg_amd_ship_ui || s.config.fg_amd_ship_still) && !s.config.fg_hud_protect) {
                     ImGui::TextDisabled("Needs \"Keep the cockpit HUD steady\".");
                 }
             }

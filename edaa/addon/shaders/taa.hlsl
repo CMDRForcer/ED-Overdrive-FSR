@@ -390,17 +390,20 @@ float ps_reactive(float4 pos : SV_Position) : SV_Target
 
 // Frame generation: the motion vectors with the cockpit HUD standing still
 // (the HUD keeps its place on screen while the scene moves behind it).
+// AMD frame generation with fg_amd_ship_still: the player's own ship stands still
+// too (t5, unbound otherwise: loads return 0).
 float2 ps_fg_motion(float4 pos : SV_Position) : SV_Target
 {
     const int3 p = int3(pos.xy, 0);
-    return hud_mask_tex.Load(p) > 0.5 ? float2(0, 0) : motion_tex.Load(p);
+    return hud_mask_tex.Load(p) > 0.5 || vehicle_mask_tex.Load(p) > 0.5 ? float2(0, 0) : motion_tex.Load(p);
 }
 
 
 // Frame generation with hud_motion: the HUD already has the cockpit's motion.
 float2 ps_fg_motion_keep(float4 pos : SV_Position) : SV_Target
 {
-    return motion_tex.Load(int3(pos.xy, 0));
+    const int3 p = int3(pos.xy, 0);
+    return vehicle_mask_tex.Load(p) > 0.5 ? float2(0, 0) : motion_tex.Load(p);
 }
 
 
