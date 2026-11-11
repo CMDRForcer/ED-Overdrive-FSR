@@ -336,7 +336,7 @@ namespace edaa::dlss
 
 
         // Evaluates the current feature on 'in' (render size width x height).
-        bool run(ID3D11DeviceContext* ctx, const upscaler_inputs& in, ID3D11Texture2D* exposure = nullptr)
+        bool run(ID3D11DeviceContext* ctx, const upscaler_inputs& in, ID3D11Resource* exposure = nullptr)
         {
             NVSDK_NGX_D3D11_DLSS_Eval_Params eval = {};
             // Fixed exposure (feature created without AutoExposure): the scene value times it is what DLSS works on.
@@ -419,8 +419,8 @@ namespace edaa::dlss
             return false;
         }
 
-        // Fixed exposure: without AutoExposure (the feature is recreated when this changes).
-        const bool fixed = in.dlss_exposure > 0;
+        // Fixed or Elite's exposure: without AutoExposure (the feature is recreated when this changes).
+        const bool fixed = in.dlss_exposure > 0 || in.exposure_tex != nullptr;
         const int flags = fixed ? dlaa_flags & ~NVSDK_NGX_DLSS_Feature_Flags_AutoExposure : dlaa_flags;
         const feature_key key = { in.width, in.height, in.width, in.height, NVSDK_NGX_PerfQuality_Value_DLAA, flags, valid_preset(in.dlss_preset) };
 
@@ -428,7 +428,9 @@ namespace edaa::dlss
             return false;
         }
 
-        ID3D11Texture2D* const exposure = fixed ? exposure_texture(device, ctx, in.dlss_exposure) : nullptr;
+        ID3D11Resource* const exposure = in.exposure_tex != nullptr ? in.exposure_tex
+            : fixed                                                  ? exposure_texture(device, ctx, in.dlss_exposure)
+                                                                     : nullptr;
 
         if (fixed && exposure == nullptr) {
             set_status("cannot create the exposure texture");
@@ -440,7 +442,8 @@ namespace edaa::dlss
         }
 
         char text[96];
-        snprintf(text, sizeof(text), "running (DLAA, preset %s, exposure %s)", preset_name(key.preset), fixed ? "fixed" : "by DLSS");
+        snprintf(text, sizeof(text), "running (DLAA, preset %s, exposure %s)", preset_name(key.preset),
+            in.exposure_tex != nullptr ? "from Elite" : fixed ? "fixed" : "by DLSS");
         set_status(text);
         return true;
     }

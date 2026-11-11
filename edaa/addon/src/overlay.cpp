@@ -13,6 +13,7 @@
 #include "xess.hpp"
 #include "fsr.hpp"
 #include "state.hpp"
+#include "exposure.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -197,13 +198,21 @@ namespace edaa
                     ImGui::EndCombo();
                 }
 
-#if EDAA_DEVELOPER
-                // Test: a fixed exposure instead of DLSS's own estimate (DLAA only, recreates the feature).
-                edit(ImGui::Checkbox("Fixed exposure (test, DLAA)", &s.config.dlss_fixed_exposure));
+                // Exposure DLAA works with (recreates the feature when it changes).
+                edit(ImGui::Combo("Exposure", &s.config.dlss_exposure_mode, "Estimated by DLSS\0Fixed\0From Elite (experimental)\0"));
 
-                if (s.config.dlss_fixed_exposure) {
+                if (s.config.dlss_exposure_mode == 1 || s.config.dlss_exposure_mode == 2) {
                     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
-                    edit(ImGui::SliderFloat("Exposure", &s.config.dlss_exposure, 0.1f, 1000.0f, "%.1f", ImGuiSliderFlags_Logarithmic));
+                    edit(ImGui::SliderFloat(s.config.dlss_exposure_mode == 1 ? "Exposure value" : "Exposure value when not found", &s.config.dlss_exposure, 0.1f,
+                        1000.0f, "%.1f", ImGuiSliderFlags_Logarithmic));
+                }
+
+#if EDAA_DEVELOPER
+                if (s.config.dlss_exposure_mode == 2) {
+                    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+                    edit(ImGui::SliderFloat("Elite exposure scale", &s.config.dlss_exposure_scale, 0.1f, 10.0f, "%.2f", ImGuiSliderFlags_Logarithmic));
+                    ImGui::SameLine();
+                    ImGui::Text("now %.2f", exposure::last_value());
                 }
 #endif
 

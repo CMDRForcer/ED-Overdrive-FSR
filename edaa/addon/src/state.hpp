@@ -72,8 +72,9 @@ namespace edaa
         float dlss_reactive_strength = 1.0f; // its scale, 0..2
         float dlss_reactive_threshold = 0.75f; // share of the pixel the transparents must change to count, 0..0.95
         float fsr_sharpness = 0.0f; // AMD FSR (experimental): RCAS sharpening 0..1, 0 = off
-        bool dlss_fixed_exposure = false; // test (developer build): DLAA gets dlss_exposure instead of estimating the exposure itself
-        float dlss_exposure = 30.0f; // dlss_fixed_exposure: multiplier of the HDR scene values (30 = taa_hdr_scale)
+        int dlss_exposure_mode = 0; // DLAA exposure: 0 estimated by DLSS, 1 fixed (dlss_exposure), 2 Elite's own (exposure.hpp; dlss_exposure when not found)
+        float dlss_exposure = 10.0f; // fixed DLAA exposure, multiplier of the HDR scene values (10 looked best in game, 11.11.)
+        float dlss_exposure_scale = 1.0f; // dlss_exposure_mode 2: Elite's exposure times this
         int dlss_preset = 0; // DLSS model: 0 = NVIDIA's default (K for DLAA), else NVSDK_NGX_DLSS_Hint_Render_Preset (J 10, K 11, L 12, M 13)
         float mip_bias_extra = 0; // developer, not saved: added to the upscaling mip bias
         bool upscaler_jitter_flip = false; // developer, not saved: negate the jitter passed to DLSS/XeSS (sign convention check)

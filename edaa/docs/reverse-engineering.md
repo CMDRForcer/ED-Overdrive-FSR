@@ -482,3 +482,27 @@ frames. The add-on uses this to pause jitter and TAA from the first tile
 on (`camera_tracker.cpp`, see addon.md); otherwise the history blends the
 tiles together and the jitter shifts them. Tool: off-centre terms are easy
 to list from a `rd_dump_frame.py` dump (`check_layout.py` prints the views).
+
+
+## 10. Exposure (tonemap), for DLAA
+
+Frame trace 11.11. (EDHM loaded, 3200x1800): the tonemap is a `draw 3`
+into an `R8G8B8A8` render-size target after the bloom; its pixel shader
+reads the HDR scene (`t1`), the bloom (`t2`, half size) and a 16x16 LUT
+(`t0`). Its vertex shader `936d466fbd388547` (not replaced by EDHM) only
+samples the first texel of a 6x1 `R32_TYPELESS` texture and passes it on in
+`TEXCOORD1.z`: the adapted scene luminance `L`. The pixel shader
+(`380822531cf1f3d4`, EDHM's copy in `ShaderFixes`) computes the exposure from
+it and its `cb2` (16 float4):
+
+    bias  = cb2[8].x + (cb2[8].z != 0 ? 1.4 : 0)
+    x     = log2(8 L) - bias - 3
+    w2    = 2 cb2[7].w
+    curve = (w2 / (log10(1 + 2^(x cb2[8].y)) + w2)) ^ cb2[7].w
+    E     = (1.03 cb2[7].z - curve) / L * 2^-cb2[7].y
+
+The scene is multiplied by `cb2[2].x` (clamped), by `E`, mixed with the
+bloom (`cb2[1].w`) and multiplied by `cb2[6].y` before the tonemap curve.
+`dlss_exposure_mode` 2 copies the texture and `cb2` at the tonemap draw (GPU
+copies) and the next frame's resolve evaluates `cb2[2].x * E * cb2[6].y`
+(`ps_exposure`) into the 1x1 exposure texture of DLAA (`exposure.hpp`).

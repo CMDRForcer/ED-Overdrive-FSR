@@ -30,6 +30,10 @@ public static class AddonSettings
         ("0", "NVIDIA DLSS-G (RTX 40/50)"), ("1", "AMD FSR Frame Generation (experimentell, jede Karte)"),
     ];
 
+    public static readonly (string Value, string Text)[] DlaaExposure = [
+        ("0", "DLSS schätzt selbst"), ("1", "Fest"), ("2", "Von Elite (experimentell)"),
+    ];
+
     public static readonly (string Value, string Text)[] DlaaModels = [
         ("0", "NVIDIA-Standard"), ("10", "J"), ("11", "K"), ("12", "L"), ("13", "M"),
     ];
@@ -58,6 +62,8 @@ public static class AddonSettings
         new("Kantenglättung", "aa_method", "Methode", "AMD FSR ist experimentell: FSR 4 auf Radeon RX 6000 und neuer, sonst FSR 3.1.", SettingKind.Choice, "1", Choices: Methods),
         new("Kantenglättung", "fsr_sharpness", "FSR-Schärfe (0 = aus)", "Nur für AMD FSR.", SettingKind.Real, "0", 0, 1),
         new("Kantenglättung", "dlss_preset", "DLAA-Modell", "Das Modell, das EDAA bei NVIDIA anfordert.", SettingKind.Choice, "11", Choices: DlaaModels),
+        new("Kantenglättung", "dlss_exposure_mode", "DLAA-Belichtung", "Von Elite: DLAA bekommt Elites eigene Belichtung, ruhiger in sehr dunklen und grellen Szenen (experimentell). Fest: der Wert darunter.", SettingKind.Choice, "0", Choices: DlaaExposure),
+        new("Kantenglättung", "dlss_exposure", "Feste DLAA-Belichtung", "Bei „Fest“, und bei „Von Elite“, solange Elites Wert nicht gefunden ist. 10 sah im Test am besten aus.", SettingKind.Real, "10", 0.1, 100),
         new("Kantenglättung", "aa_ship_steady", "Eigenes Schiff ruhig halten", "Rumpf und Vorbau bleiben beim Drehen scharf (alle Methoden, auch Frame Generation). Das Schiff wird beim Fliegen automatisch erkannt. Schmiert draußen etwas, wieder ausschalten.", SettingKind.Toggle, "0"),
         new("Kantenglättung", "aa_ship_distance", "Eigenes Schiff bis (m)", "Nur mit „Eigenes Schiff ruhig halten“. 0 = nur automatisch erkennen. Flimmert der Außenrumpf noch, etwa die sichtbare Schiffslänge, z. B. 95.", SettingKind.Real, "0", 0, 150),
         new("Kantenglättung", "taa_before_hud", "Vor dem HUD glätten", "An: FG-HUD-Schutz voll, das HUD bleibt aber ungeglättet. Aus: HUD geglättet, FG-HUD-Schutz schwächer.", SettingKind.Toggle, "1"),

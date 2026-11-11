@@ -26,7 +26,8 @@ add_custom_command(
 	COMMAND ${FXC} /nologo /O3 /T ps_5_0 /E ps_debug /Vn g_ps_debug /Fh ${SHADER_OUT}/ps_debug.h ${SHADER_SRC}
 	COMMAND ${FXC} /nologo /O3 /T ps_5_0 /E ps_hud_motion /Vn g_ps_hud_motion /Fh ${SHADER_OUT}/ps_hud_motion.h ${SHADER_SRC}
 	COMMAND ${FXC} /nologo /O3 /T ps_5_0 /E ps_ship_auto /Vn g_ps_ship_auto /Fh ${SHADER_OUT}/ps_ship_auto.h ${SHADER_SRC}
-	COMMAND ${CMAKE_COMMAND} -DOUT=${SHADER_HEADER} -DHEADERS=vs_fullscreen.h,ps_motion.h,ps_debug.h,ps_hud_motion.h,ps_ship_auto.h -P ${CMAKE_SOURCE_DIR}/addon/shaders/combine.cmake
+	COMMAND ${FXC} /nologo /O3 /T ps_5_0 /E ps_exposure /Vn g_ps_exposure /Fh ${SHADER_OUT}/ps_exposure.h ${SHADER_SRC}
+	COMMAND ${CMAKE_COMMAND} -DOUT=${SHADER_HEADER} -DHEADERS=vs_fullscreen.h,ps_motion.h,ps_debug.h,ps_hud_motion.h,ps_ship_auto.h,ps_exposure.h -P ${CMAKE_SOURCE_DIR}/addon/shaders/combine.cmake
 	DEPENDS ${SHADER_SRC} ${CMAKE_SOURCE_DIR}/addon/shaders/combine.cmake
 	COMMENT "Compiling motion.hlsl"
 )

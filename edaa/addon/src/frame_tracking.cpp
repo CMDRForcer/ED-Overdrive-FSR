@@ -18,6 +18,7 @@
 #include "profile.hpp"
 #include "events.hpp"
 #include "state.hpp"
+#include "exposure.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -69,6 +70,8 @@ namespace edaa
             uint64_t vs_hash = 0, vs_pipeline = 0;
             uint64_t vs_srv[4] = {};
             uint32_t vs_srv_w[4] = {}, vs_srv_h[4] = {}, vs_srv_fmt[4] = {};
+            // Elite's exposure (exposure.hpp): vertex shader texture 0 and pixel shader cb2.
+            uint64_t vs_srv0 = 0, ps_cb2 = 0, ps_cb2_offset = 0;
         };
 
         // Depth-stencil state objects that pass the geometry test, and pixel
@@ -562,6 +565,27 @@ namespace edaa
         void on_push_descriptors_trace(command_list* cmd_list, shader_stage stages, pipeline_layout, uint32_t, const descriptor_table_update& update)
         {
             addon_state& s = state();
+
+            // Elite's exposure (exposure.hpp): what the tonemap draw will read.
+            const bool vs_texture0 = update.type == descriptor_type::shader_resource_view && (stages & shader_stage::vertex) != 0 && update.binding == 0 &&
+                update.count > 0;
+            const bool ps_cb2 = update.type == descriptor_type::constant_buffer && (stages & shader_stage::pixel) != 0 && update.binding <= 2 &&
+                update.binding + update.count > 2;
+
+            if (vs_texture0 || ps_cb2) {
+                if (auto* c = context_of(cmd_list)) {
+                    if (vs_texture0) {
+                        const resource_view view = static_cast<const resource_view*>(update.descriptors)[0];
+                        c->vs_srv0 = view.handle != 0 ? cmd_list->get_device()->get_resource_from_view(view).handle : 0;
+                    }
+                    else {
+                        const buffer_range& range = static_cast<const buffer_range*>(update.descriptors)[2 - update.binding];
+                        c->ps_cb2 = range.buffer.handle;
+                        c->ps_cb2_offset = range.offset;
+                    }
+                }
+            }
+
             const bool dumping = s.dumping.load(std::memory_order_relaxed), learning = s.hud_learning.load(std::memory_order_relaxed);
 
             if ((!dumping && !learning) || update.type != descriptor_type::shader_resource_view) {
@@ -1157,6 +1181,12 @@ namespace edaa
 
             if (ctx == nullptr) {
                 return false;
+            }
+
+            // Elite's tonemap: copy its exposure inputs for the next frame's DLAA (exposure.hpp).
+            if (fullscreen && ctx->vs_hash == exposure::vertex_shader_hash && ctx->vs_srv0 != 0 && ctx->ps_cb2 != 0 && exposure::wanted()) {
+                exposure::capture(reinterpret_cast<ID3D11DeviceContext*>(cmd_list->get_native()), reinterpret_cast<ID3D11Resource*>(ctx->vs_srv0),
+                    reinterpret_cast<ID3D11Buffer*>(ctx->ps_cb2), ctx->ps_cb2_offset);
             }
 
             cycler_record(ctx->ps_hash, false);

@@ -413,3 +413,33 @@ float4 ps_debug(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
 
     return float4(depth_shade.xxx, 1);
 }
+
+
+// Elite's exposure for DLAA (dlss_exposure_mode 2, exposure.hpp): the formula of
+// the tonemap pixel shader (380822531cf1f3d4) on the adapted luminance its vertex
+// shader reads (first texel of t0, last frame) with its cb2 (b2, copies of both).
+// The scene times this is what Elite's tonemap curve gets.
+cbuffer tonemap_constants : register(b2)
+{
+    float4 tm[16];
+};
+
+cbuffer exposure_constants : register(b3)
+{
+    float4 exposure_params; // x: scale (dlss_exposure_scale), y: fallback (dlss_exposure)
+};
+
+float ps_exposure(float4 pos : SV_Position) : SV_Target
+{
+    const float lum = scene_depth.Load(int3(0, 0, 0));
+    const float bias = (tm[8].z != 0 ? 1.4 : 0) + tm[8].x;
+    const float x = log2(8 * lum) - bias - 3;
+    const float w2 = 2 * tm[7].w;
+    const float d = log2(exp2(x * tm[8].y) + 1) * 0.30103 + w2;
+    const float curve = exp2(log2(w2 / d) * tm[7].w);
+    const float exposure = (tm[7].z * 1.03 - curve) / lum * exp2(-tm[7].y);
+    const float result = tm[2].x * exposure * tm[6].y * exposure_params.x;
+
+    // NaN, no luminance yet or nonsense: the fixed value.
+    return lum > 0 && result > 1e-6 && result < 1e6 ? result : exposure_params.y;
+}
