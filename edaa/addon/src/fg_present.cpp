@@ -820,6 +820,8 @@ namespace edaa
         }
 
 
+        std::atomic<bool> ffx_debug_view{ false }; // fg_amd_debug_view
+
         ffxReturnCode_t ffx_generate(ffxDispatchDescFrameGeneration* params, void* user)
         {
             return ffx_api.dispatch(static_cast<ffxContext*>(user), &params->header);
@@ -835,6 +837,7 @@ namespace edaa
             c.frameGenerationCallback = on ? ffx_generate : nullptr;
             c.frameGenerationCallbackUserContext = on ? &p.ffx_fg_ctx : nullptr;
             c.frameGenerationEnabled = on;
+            c.flags = ffx_debug_view.load(std::memory_order_relaxed) ? FFX_FRAMEGENERATION_FLAG_DRAW_DEBUG_VIEW : 0u;
             c.allowAsyncWorkloads = false;
             c.generationRect = { 0, 0, static_cast<int32_t>(p.width), static_cast<int32_t>(p.height) };
             c.frameID = p.ffx_frame_id;
@@ -1638,7 +1641,7 @@ namespace edaa
 
         void on_reshade_present_fg(effect_runtime* runtime)
         {
-            bool enabled, generate, hud_protect, hud_layer;
+            bool enabled, generate, hud_protect, hud_layer, ship_layer;
             int variant, fps_limit, backend;
             {
                 addon_state& s = state();
@@ -1650,6 +1653,10 @@ namespace edaa
                 hud_protect = s.config.fg_hud_protect;
                 backend = s.config.fg_backend;
                 hud_layer = s.config.fg_amd_hud_ui;
+                ship_layer = s.config.fg_amd_ship_ui;
+#if EDAA_FSR
+                ffx_debug_view = s.config.fg_amd_debug_view;
+#endif
             }
 
             // The runtime ReShade adds on our D3D12 swap chain presents too: ignore it.
@@ -1679,7 +1686,7 @@ namespace edaa
             auto* const back_buffer = reinterpret_cast<ID3D11Texture2D*>(runtime->get_current_back_buffer().handle);
             DXGI_FORMAT view_format = DXGI_FORMAT_UNKNOWN;
 
-            if (hud_target && hud_layer && back_buffer != nullptr) {
+            if (hud_target && (hud_layer || ship_layer) && back_buffer != nullptr) {
                 D3D11_TEXTURE2D_DESC bb = {};
                 back_buffer->GetDesc(&bb);
                 view_format = plain_format(bb.Format);
@@ -1701,7 +1708,7 @@ namespace edaa
             if (hud_target) {
                 auto* const ctx = reinterpret_cast<ID3D11DeviceContext*>(runtime->get_command_queue()->get_immediate_command_list()->get_native());
 #if EDAA_FSR
-                layer_built = layer && fg::build_hud_layer(ctx, back_buffer, view_format, layer.Get());
+                layer_built = layer && fg::build_hud_layer(ctx, back_buffer, view_format, layer.Get(), hud_layer, ship_layer);
 #endif
                 hud_done = fg::apply_hud_motion(ctx, hud_target.Get());
             }

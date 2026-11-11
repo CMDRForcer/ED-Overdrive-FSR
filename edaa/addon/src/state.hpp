@@ -57,6 +57,8 @@ namespace edaa
         int fg_fps_limit = 140; // frame generation: Reflex limit of the displayed frames (real + generated), 0 = none
         bool fg_hud_protect = true; // frame generation: the cockpit HUD stands still in the generated frames (no smearing)
         bool fg_amd_hud_ui = false; // AMD frame generation (experimental): the cockpit HUD in generated frames comes from the newest real frame (fg_present.cpp)
+        bool fg_amd_ship_ui = false; // AMD frame generation (experimental): the player's own ship in generated frames comes from the newest real frame
+        bool fg_amd_debug_view = false; // AMD frame generation: AMD's debug view in the generated frames (diagnosis)
         bool fg_generate = false; // DLSS Frame Generation through Streamline (fg_present.cpp)
         int fg_backend = 0; // frame generation: 0 = NVIDIA DLSS-G (Streamline), 1 = AMD FSR Frame Generation (experimental); read at game start
         bool fg_present_test = false; // present through a D3D12 swap chain (needed by fg_generate, read at game start)

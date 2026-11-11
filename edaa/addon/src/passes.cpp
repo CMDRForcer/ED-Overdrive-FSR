@@ -1862,16 +1862,27 @@ namespace edaa
     }
 
 
-    bool fg::build_hud_layer(ID3D11DeviceContext* ctx, ID3D11Texture2D* back_buffer, DXGI_FORMAT view_format, ID3D11Texture2D* target)
+    bool fg::build_hud_layer(ID3D11DeviceContext* ctx, ID3D11Texture2D* back_buffer, DXGI_FORMAT view_format, ID3D11Texture2D* target, bool hud, bool ship)
     {
         try {
             const std::lock_guard<std::mutex> lock(gpu_mutex);
             ComPtr<ID3D11Device> device;
             ctx->GetDevice(&device);
 
-            // Same condition as apply_hud_motion (called right after it, which consumes fg_mask_valid).
-            if (!fg_mask_valid || !upscale_in.hud_mask || device.Get() != gpu.device || !gpu.hud_mask.srv || !gpu.ps_fg_hud_ui) {
+            if (device.Get() != gpu.device || !gpu.ps_fg_hud_ui) {
+                return false;
+            }
+
+            // HUD: same condition as apply_hud_motion (called right after it, which consumes fg_mask_valid).
+            // Ship: the vehicle mask of this frame's motion pass.
+            const bool hud_ok = hud && fg_mask_valid && upscale_in.hud_mask && gpu.hud_mask.srv;
+            const bool ship_ok = ship && gpu.mask.srv;
+
+            if (!hud_ok) {
                 gpu.hud_mask_prev_valid = false;
+            }
+
+            if (!hud_ok && !ship_ok) {
                 return false;
             }
 
@@ -1897,7 +1908,7 @@ namespace edaa
             ComPtr<ID3D11ShaderResourceView> back_srv;
 
             if (FAILED(device->CreateShaderResourceView(back_buffer, &sd, &back_srv)) ||
-                (!gpu.hud_mask_prev.tex && !create_target(DXGI_FORMAT_R8_UNORM, gpu.hud_mask_prev))) {
+                (hud_ok && !gpu.hud_mask_prev.tex && !create_target(DXGI_FORMAT_R8_UNORM, gpu.hud_mask_prev))) {
                 return false;
             }
 
@@ -1908,13 +1919,17 @@ namespace edaa
             bind_srvs(ctx, {});
             ID3D11RenderTargetView* const targets[] = { fg_layer_rtv.Get() };
             ctx->OMSetRenderTargets(1, targets, nullptr);
-            bind_srvs(ctx, { back_srv.Get(), gpu.hud_mask_prev_valid ? gpu.hud_mask_prev.srv.Get() : nullptr, nullptr, nullptr, gpu.hud_mask.srv.Get() });
+            bind_srvs(ctx, { back_srv.Get(), hud_ok && gpu.hud_mask_prev_valid ? gpu.hud_mask_prev.srv.Get() : nullptr, nullptr, nullptr,
+                hud_ok ? gpu.hud_mask.srv.Get() : nullptr, ship_ok ? gpu.mask.srv.Get() : nullptr });
             ctx->PSSetShader(gpu.ps_fg_hud_ui.Get(), nullptr, 0);
             ctx->Draw(3, 0);
             bind_srvs(ctx, {});
             ctx->OMSetRenderTargets(0, nullptr, nullptr);
-            ctx->CopyResource(gpu.hud_mask_prev.tex.Get(), gpu.hud_mask.tex.Get());
-            gpu.hud_mask_prev_valid = true;
+
+            if (hud_ok) {
+                ctx->CopyResource(gpu.hud_mask_prev.tex.Get(), gpu.hud_mask.tex.Get());
+                gpu.hud_mask_prev_valid = true;
+            }
             return true;
         }
         catch (...) {

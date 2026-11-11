@@ -404,11 +404,12 @@ float2 ps_fg_motion_keep(float4 pos : SV_Position) : SV_Target
 }
 
 
-// AMD frame generation, HUD layer (fg_amd_hud_ui): AMD's swap chain draws it over
-// every frame as lerp(frame, layer.rgb, layer.a). Colour = the real frame (t0,
-// display size), alpha = 1 where the cockpit HUD is this frame (t4) or was last
-// frame (t1.r), both render size, dilated by one pixel. Real frames stay as they
-// are; generated frames show the newest real HUD instead of two blended ones.
+// AMD frame generation, HUD layer (fg_amd_hud_ui, fg_amd_ship_ui): AMD's swap chain
+// draws it over every frame as lerp(frame, layer.rgb, layer.a). Colour = the real
+// frame (t0, display size), alpha = 1 where the cockpit HUD is this frame (t4) or
+// was last frame (t1.r), dilated by one pixel, or where the player's own ship is
+// (t5, moves with the camera), dilated by two; all masks render size, unbound = 0.
+// Real frames stay as they are; generated frames show the newest real HUD and ship.
 float4 ps_fg_hud_ui(float4 pos : SV_Position) : SV_Target
 {
     uint mw, mh, ow, oh;
@@ -423,6 +424,12 @@ float4 ps_fg_hud_ui(float4 pos : SV_Position) : SV_Target
             // Out of bounds (and unbound) loads return 0.
             const int3 p = int3(m + int2(x, y), 0);
             hud = max(hud, max(hud_mask_tex.Load(p), history_tex.Load(p).r));
+        }
+    }
+
+    [unroll] for (int v = -2; v <= 2; ++v) {
+        [unroll] for (int u = -2; u <= 2; ++u) {
+            hud = max(hud, vehicle_mask_tex.Load(int3(m + int2(u, v), 0)));
         }
     }
     // clang-format on

@@ -70,6 +70,8 @@ namespace edaa
             EDAA_FIELD(fg_backend, integer),
             EDAA_FIELD(fg_hud_protect, boolean),
             EDAA_FIELD(fg_amd_hud_ui, boolean),
+            EDAA_FIELD(fg_amd_ship_ui, boolean),
+            EDAA_FIELD(fg_amd_debug_view, boolean),
             EDAA_FIELD(fg_fps_limit, integer),
             EDAA_FIELD(gpu_profiler, boolean),
         };
