@@ -14,7 +14,9 @@ cbuffer motion_constants : register(b0)
     float4 vehicle[3]; // rows of the vehicle motion: current -> previous camera-relative position (3x4)
     float4 vehicle_on; // x: 1 when the vehicle motion is known, else vehicle pixels get no motion,
                        // y: AMD frame generation ship distance (m, 0 = off; fg_amd_ship_distance),
-                       // z: 1 = AMD frame generation uses the automatic ship detection (t2 in ps_motion, fg_amd_ship_auto)
+                       // z: automatic ship detection (t2 in ps_motion): 1 = for AMD frame generation only (fg_amd_ship_auto),
+                       //    2 = for the anti-aliasing too (aa_ship_steady),
+                       // w: aa_ship_steady ship distance (m, 0 = off; aa_ship_distance)
 };
 
 // Moving objects debug view (object_motion.cpp), up to 128 markers.
@@ -88,6 +90,12 @@ motion_output ps_motion(float4 pos : SV_Position)
         o.mask = (depth > 0 && params.z / depth < params.w) ? 1 : 0;
     }
 
+    // aa_ship_steady: the same for the anti-aliasing (and every frame generation),
+    // closer than vehicle_on.w metres.
+    if (o.mask == 0 && vehicle_on.w > 0 && depth > 0 && params.z / depth < vehicle_on.w) {
+        o.mask = 1;
+    }
+
     // AMD frame generation: the outer hull and nose of the player's ship carry no
     // stencil bit. Closer than vehicle_on.y metres counts as the ship for AMD only
     // (0.4: below the 0.5 threshold of TAA and the vehicle motion below).
@@ -99,9 +107,12 @@ motion_output ps_motion(float4 pos : SV_Position)
     // Its edges stay undecided (the jitter moves them across the silhouette): a pixel
     // up to 2 pixels from a detected one, at about its distance (not the world
     // behind), counts too.
+    // 0.4: AMD frame generation only; 1 with aa_ship_steady (vehicle_on.z = 2).
+    const float ship_value = vehicle_on.z > 1.5 ? 1 : 0.4;
+
     if (o.mask == 0 && vehicle_on.z > 0 && depth > 0) {
         if (mask_tex.Load(int3(pos.xy, 0)) > 0.5) {
-            o.mask = 0.4;
+            o.mask = ship_value;
         }
         else {
             const float view_z = params.z / depth;
@@ -114,7 +125,7 @@ motion_output ps_motion(float4 pos : SV_Position)
                 const float d = scene_depth.Load(q);
 
                 if (mask_tex.Load(q) > 0.5 && d > 0 && view_z < params.z / d * 1.5 + 0.5) {
-                    o.mask = 0.4;
+                    o.mask = ship_value;
                 }
             }
             // clang-format on

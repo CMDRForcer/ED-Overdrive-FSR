@@ -235,6 +235,21 @@ namespace edaa
                 ImGui::EndDisabled();
             }
 
+            // Own ship: the outer hull and nose carry no stencil bit and got the world's motion.
+            edit(ImGui::Checkbox("Keep own ship steady (sharp hull lines when turning)", &s.config.aa_ship_steady));
+
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Finds the own ship while flying (moves with the camera) and gives its hull the ship's motion.\n"
+                                  "Every method, frame generation included. If something outside smears, turn it off.");
+            }
+
+            if (s.config.aa_ship_steady) {
+                ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+                edit(ImGui::SliderFloat("Own ship up to (m)##aa", &s.config.aa_ship_distance, 0.0f, 150.0f, "%.0f"));
+                ImGui::SameLine();
+                ImGui::TextDisabled("0 = found automatically");
+            }
+
             draw_upscaling(s, edit);
 
             if (s.map_mode) {

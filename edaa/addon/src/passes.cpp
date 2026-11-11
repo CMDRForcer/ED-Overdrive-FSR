@@ -936,8 +936,12 @@ namespace edaa
             mc.vehicle_on[0] = in.vehicle_known ? 1.0f : 0.0f;
             const bool amd_ship = in.config.fg_backend == 1 && (in.config.fg_amd_ship_still || in.config.fg_amd_ship_ui);
             const bool amd_ship_auto = amd_ship && in.config.fg_amd_ship_auto;
+            // aa_ship_steady: the detected ship counts for the anti-aliasing (and every frame generation) too.
+            const bool aa_ship = in.config.aa_ship_steady;
             mc.vehicle_on[1] = amd_ship ? in.config.fg_amd_ship_distance : 0.0f;
-            mc.vehicle_on[2] = amd_ship_auto ? 1.0f : 0.0f;
+            mc.vehicle_on[2] = aa_ship ? 2.0f : amd_ship_auto ? 1.0f : 0.0f;
+            mc.vehicle_on[3] = aa_ship ? in.config.aa_ship_distance : 0.0f;
+            const bool ship_auto_on = aa_ship || amd_ship_auto;
 
             const std::lock_guard<std::mutex> lock(gpu_mutex);
 
@@ -981,7 +985,7 @@ namespace edaa
 
             // 0. Automatic ship detection (debug view "Ship auto", fg_amd_ship_auto):
             // ps_motion below reads this frame's score.
-            if ((amd_ship_auto || in.config.debug == static_cast<int>(debug_view::ship_auto)) && gpu.ps_ship_auto) {
+            if ((ship_auto_on || in.config.debug == static_cast<int>(debug_view::ship_auto)) && gpu.ps_ship_auto) {
                 bool ready = true;
 
                 for (int i = 0; i < 2 && ready; ++i) {
@@ -1020,7 +1024,7 @@ namespace edaa
                 bind_srvs(ctx, {});
                 ID3D11RenderTargetView* const motion_targets[] = { gpu.motion.rtv.Get(), gpu.mask.rtv.Get() };
                 ctx->OMSetRenderTargets(2, motion_targets, nullptr);
-                ID3D11ShaderResourceView* const ship_score = amd_ship_auto && gpu.ship_valid ? gpu.ship_score[gpu.ship_index].srv.Get() : nullptr;
+                ID3D11ShaderResourceView* const ship_score = ship_auto_on && gpu.ship_valid ? gpu.ship_score[gpu.ship_index].srv.Get() : nullptr;
                 bind_srvs(ctx, { gpu.depth.srv.Get(), nullptr, ship_score, nullptr, gpu.stencil_srv.Get() });
                 ctx->PSSetShader(gpu.ps_motion.Get(), nullptr, 0);
                 ctx->Draw(3, 0);
@@ -1449,6 +1453,7 @@ namespace edaa
             if (s.on_foot) {
                 in.config.fg_amd_ship_distance = 0.0f; // no ship around the camera
                 in.config.fg_amd_ship_auto = false;
+                in.config.aa_ship_steady = false;
             }
 
             const upscale_failure& f = upscale_failed;

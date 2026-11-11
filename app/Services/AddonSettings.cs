@@ -58,6 +58,8 @@ public static class AddonSettings
         new("Kantenglättung", "aa_method", "Methode", "AMD FSR ist experimentell: FSR 4 auf Radeon RX 6000 und neuer, sonst FSR 3.1.", SettingKind.Choice, "1", Choices: Methods),
         new("Kantenglättung", "fsr_sharpness", "FSR-Schärfe (0 = aus)", "Nur für AMD FSR.", SettingKind.Real, "0", 0, 1),
         new("Kantenglättung", "dlss_preset", "DLAA-Modell", "Das Modell, das EDAA bei NVIDIA anfordert.", SettingKind.Choice, "11", Choices: DlaaModels),
+        new("Kantenglättung", "aa_ship_steady", "Eigenes Schiff ruhig halten", "Rumpf und Vorbau bleiben beim Drehen scharf (alle Methoden, auch Frame Generation). Das Schiff wird beim Fliegen automatisch erkannt. Schmiert draußen etwas, wieder ausschalten.", SettingKind.Toggle, "0"),
+        new("Kantenglättung", "aa_ship_distance", "Eigenes Schiff bis (m)", "Nur mit „Eigenes Schiff ruhig halten“. 0 = nur automatisch erkennen. Flimmert der Außenrumpf noch, etwa die sichtbare Schiffslänge, z. B. 95.", SettingKind.Real, "0", 0, 150),
         new("Kantenglättung", "taa_before_hud", "Vor dem HUD glätten", "An: FG-HUD-Schutz voll, das HUD bleibt aber ungeglättet. Aus: HUD geglättet, FG-HUD-Schutz schwächer.", SettingKind.Toggle, "1"),
         new("Kantenglättung", "hud_learn", "Cockpit-HUD an den Panel-Texturen erkennen", "Nötig, wenn EDHM die HUD-Shader ersetzt: sonst wirken HUD-Maske und FG-HUD-Schutz nicht.", SettingKind.Toggle, "1"),
         new("Kantenglättung", "hud_motion", "Cockpit-HUD bewegt sich mit dem Cockpit", "Panels bleiben bei Kopf- und Schiffsbewegung scharf. Wirkt nur beim Hochskalieren (unter 1,0).", SettingKind.Toggle, "1"),
