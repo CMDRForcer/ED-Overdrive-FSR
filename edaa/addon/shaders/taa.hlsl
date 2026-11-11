@@ -404,6 +404,33 @@ float2 ps_fg_motion_keep(float4 pos : SV_Position) : SV_Target
 }
 
 
+// AMD frame generation, HUD layer (fg_amd_hud_ui): AMD's swap chain draws it over
+// every frame as lerp(frame, layer.rgb, layer.a). Colour = the real frame (t0,
+// display size), alpha = 1 where the cockpit HUD is this frame (t4) or was last
+// frame (t1.r), both render size, dilated by one pixel. Real frames stay as they
+// are; generated frames show the newest real HUD instead of two blended ones.
+float4 ps_fg_hud_ui(float4 pos : SV_Position) : SV_Target
+{
+    uint mw, mh, ow, oh;
+    hud_mask_tex.GetDimensions(mw, mh);
+    scene_color.GetDimensions(ow, oh);
+    const int2 m = int2(pos.xy * float2(mw, mh) / float2(ow, oh));
+    float hud = 0;
+
+    // clang-format off
+    [unroll] for (int y = -1; y <= 1; ++y) {
+        [unroll] for (int x = -1; x <= 1; ++x) {
+            // Out of bounds (and unbound) loads return 0.
+            const int3 p = int3(m + int2(x, y), 0);
+            hud = max(hud, max(hud_mask_tex.Load(p), history_tex.Load(p).r));
+        }
+    }
+    // clang-format on
+
+    return float4(scene_color.Load(int3(pos.xy, 0)), hud > 0.5 ? 1.0 : 0.0);
+}
+
+
 // Copies the resolved image back into the game's scene target.
 float3 ps_copy(float4 pos : SV_Position) : SV_Target
 {

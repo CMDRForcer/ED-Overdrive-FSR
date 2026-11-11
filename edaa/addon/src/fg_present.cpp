@@ -121,6 +121,13 @@ namespace edaa
             void* ffx_swapchain_ctx = nullptr; // ffxContext
             void* ffx_fg_ctx = nullptr; // ffxContext
             LARGE_INTEGER ffx_last_prepare = {};
+            // fg_amd_hud_ui: HUD layer AMD's swap chain draws over every frame (fg::build_hud_layer).
+            // Two, written alternately: AMD copies one at Present while D3D11 may write the other.
+            ComPtr<ID3D11Texture2D> layer11[2];
+            ComPtr<ID3D12Resource> layer12[2];
+            uint64_t layer_done[2] = {}; // AMD's copy of this layer ran by this value
+            int layer_write = 0; // layer the next frame writes
+            int layer_ready = -1; // layer built for the coming present (-1: none)
 
             bool generator() const { return sl_on || ffx_on; } // a frame generation backend runs
         };
@@ -850,6 +857,37 @@ namespace edaa
         }
 
 
+        // fg_amd_hud_ui: the HUD layer AMD draws over this present's frames (null: none).
+        // Registered every present: AMD forgets it once it copied it.
+        void ffx_register_layer(ID3D12Resource* layer)
+        {
+            if (p.ffx_swapchain_ctx == nullptr) {
+                return;
+            }
+
+            ffxConfigureDescFrameGenerationSwapChainRegisterUiResourceDX12 r = {};
+            r.header.type = FFX_API_CONFIGURE_DESC_TYPE_FRAMEGENERATIONSWAPCHAIN_REGISTERUIRESOURCE_DX12;
+
+            if (layer != nullptr) {
+                r.uiResource = ffxApiGetResourceDX12(layer, FFX_API_RESOURCE_STATE_COMMON);
+                r.flags = FFX_FRAMEGENERATION_UI_COMPOSITION_FLAG_ENABLE_INTERNAL_UI_DOUBLE_BUFFERING; // not premultiplied: lerp(frame, rgb, a)
+            }
+
+            const ffxReturnCode_t result = ffx_api.configure(&p.ffx_swapchain_ctx, &r.header);
+            static int errors = 0;
+            static bool logged = false;
+
+            if (result != FFX_API_RETURN_OK && errors < 5) {
+                ++errors;
+                ffx_check("HUD layer registration", result);
+            }
+            else if (result == FFX_API_RETURN_OK && layer != nullptr && !logged) {
+                logged = true;
+                log_info("EDAA FG: AMD HUD layer active (cockpit HUD from the newest real frame)");
+            }
+        }
+
+
         void ffx_barrier(ID3D12Resource* resource, D3D12_RESOURCE_STATES from, D3D12_RESOURCE_STATES to, D3D12_RESOURCE_BARRIER& b)
         {
             b = {};
@@ -1509,6 +1547,8 @@ namespace edaa
 
                     ++p.ffx_frame_id;
                 }
+
+                ffx_register_layer(p.ffx_generating && p.layer_ready >= 0 ? p.layer12[p.layer_ready].Get() : nullptr);
             }
 #endif
 
@@ -1559,6 +1599,12 @@ namespace edaa
             p.inputs_fresh = false;
             p.resolve_seen = false;
 
+            if (p.layer_ready >= 0) {
+                p.layer_done[p.layer_ready] = p.copy_done; // AMD copied it on the queue during Present
+                p.layer_write = 1 - p.layer_ready;
+                p.layer_ready = -1;
+            }
+
 #if EDAA_SL
             if (p.sl_on) {
                 sl_marker(sl::PCLMarker::ePresentEnd);
@@ -1592,7 +1638,7 @@ namespace edaa
 
         void on_reshade_present_fg(effect_runtime* runtime)
         {
-            bool enabled, generate, hud_protect;
+            bool enabled, generate, hud_protect, hud_layer;
             int variant, fps_limit, backend;
             {
                 addon_state& s = state();
@@ -1603,6 +1649,7 @@ namespace edaa
                 fps_limit = s.config.fg_fps_limit;
                 hud_protect = s.config.fg_hud_protect;
                 backend = s.config.fg_backend;
+                hud_layer = s.config.fg_amd_hud_ui;
             }
 
             // The runtime ReShade adds on our D3D12 swap chain presents too: ignore it.
@@ -1625,12 +1672,46 @@ namespace edaa
 
             bool hud_done = false;
 
+#if EDAA_FSR
+            // AMD: the HUD layer, before apply_hud_motion (which uses up this frame's HUD mask).
+            ComPtr<ID3D11Texture2D> layer;
+            int layer_slot = -1;
+            auto* const back_buffer = reinterpret_cast<ID3D11Texture2D*>(runtime->get_current_back_buffer().handle);
+            DXGI_FORMAT view_format = DXGI_FORMAT_UNKNOWN;
+
+            if (hud_target && hud_layer && back_buffer != nullptr) {
+                D3D11_TEXTURE2D_DESC bb = {};
+                back_buffer->GetDesc(&bb);
+                view_format = plain_format(bb.Format);
+                const std::lock_guard<std::mutex> lock(presenter_mutex);
+                const int slot = p.layer_write;
+
+                // Typed sRGB back buffers would need another view: no layer (the HUD as before).
+                if (p.ffx_on && p.ffx_generating && p.shared11 && bb.Format != DXGI_FORMAT_R8G8B8A8_UNORM_SRGB &&
+                    bb.Format != DXGI_FORMAT_B8G8R8A8_UNORM_SRGB && share_input(p.shared11.Get(), p.layer11[slot], p.layer12[slot]) &&
+                    wait_for(p.layer_done[slot], 0)) {
+                    layer = p.layer11[slot];
+                    layer_slot = slot;
+                }
+            }
+#endif
+
+            bool layer_built = false;
+
             if (hud_target) {
                 auto* const ctx = reinterpret_cast<ID3D11DeviceContext*>(runtime->get_command_queue()->get_immediate_command_list()->get_native());
+#if EDAA_FSR
+                layer_built = layer && fg::build_hud_layer(ctx, back_buffer, view_format, layer.Get());
+#endif
                 hud_done = fg::apply_hud_motion(ctx, hud_target.Get());
             }
 
             const std::lock_guard<std::mutex> lock(presenter_mutex);
+#if EDAA_FSR
+            p.layer_ready = layer_built ? layer_slot : -1;
+#else
+            (void)layer_built;
+#endif
 
             if (hud_target || !hud_protect || !generate) {
                 p.hud_protected = hud_done;
@@ -1708,7 +1789,13 @@ namespace edaa
                 p.motion12[i].Reset();
                 p.motion11[i].Reset();
                 p.set_done[i] = 0;
+                p.layer12[i].Reset();
+                p.layer11[i].Reset();
+                p.layer_done[i] = 0;
             }
+
+            p.layer_write = 0;
+            p.layer_ready = -1;
 
             p.write_set = 0;
             p.ready_set = -1;

@@ -48,4 +48,10 @@ namespace edaa::fg
     // passes.cpp, at Present: rewrite 'target' (the shared motion vectors) with
     // the cockpit HUD standing still, from this frame's HUD mask. False if none.
     bool apply_hud_motion(ID3D11DeviceContext* ctx, ID3D11Texture2D* target);
+
+    // passes.cpp, at Present, before apply_hud_motion: AMD frame generation's HUD
+    // layer in 'target' (back buffer size and format): the back buffer where the
+    // cockpit HUD is this frame or was last frame, transparent elsewhere. False if
+    // there is no HUD mask this frame ('target' is left as it was).
+    bool build_hud_layer(ID3D11DeviceContext* ctx, ID3D11Texture2D* back_buffer, DXGI_FORMAT view_format, ID3D11Texture2D* target);
 }

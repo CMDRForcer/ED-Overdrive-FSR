@@ -31,6 +31,7 @@ public static class AddonSettings
     // The values worth changing. Defaults as in docs/plan.md, ranges as the overlay's sliders.
     public static readonly AddonSetting[] All = [
         new("Frame Generation", "fg_backend", "Verfahren", "Wird beim Spielstart gelesen. AMD FSR FG ist experimentell und nutzt EDAAs eigenes Bildlimit statt Reflex.", SettingKind.Choice, "0", Choices: FgBackends),
+        new("Frame Generation", "fg_amd_hud_ui", "AMD: HUD aus dem neuesten echten Bild", "Nur AMD FSR FG (experimentell): kein doppeltes Cockpit-HUD in generierten Bildern. Braucht „HUD ruhig halten“.", SettingKind.Toggle, "0"),
         new("Frame Generation", "fg_hud_protect", "HUD ruhig halten", "Das Cockpit-HUD verschmiert nicht in generierten Bildern.", SettingKind.Toggle, "1"),
         new("Frame Generation", "fg_fps_limit", "Bildlimit (angezeigte FPS, 0 = aus)", "Knapp unter der Bildwiederholrate, zum Beispiel 140 bei 144 Hz. Keinen zweiten Limiter nutzen.", SettingKind.Whole, "140", 0, 360),
         new("Kantenglättung", "aa_method", "Methode", "AMD FSR ist experimentell: FSR 4 auf Radeon RX 6000 und neuer, sonst FSR 3.1.", SettingKind.Choice, "1", Choices: Methods),

@@ -93,7 +93,7 @@ namespace edaa
         {
             ID3D11Device* device = nullptr; // not owned
             ComPtr<ID3D11VertexShader> vs;
-            ComPtr<ID3D11PixelShader> ps_motion, ps_debug, ps_taa, ps_copy, ps_hud_mask, ps_taau, ps_sharpen, ps_fg_motion, ps_hud_motion, ps_fg_motion_keep, ps_reactive;
+            ComPtr<ID3D11PixelShader> ps_motion, ps_debug, ps_taa, ps_copy, ps_hud_mask, ps_taau, ps_sharpen, ps_fg_motion, ps_hud_motion, ps_fg_motion_keep, ps_reactive, ps_fg_hud_ui;
             ComPtr<ID3D11Buffer> motion_cb, taa_cb, object_cb;
             ComPtr<ID3D11SamplerState> linear_clamp;
             ComPtr<ID3D11BlendState> max_blend; // HUD mask accumulation
@@ -106,6 +106,8 @@ namespace edaa
             target upscale_input; // upscaling: typed copy of the game's tonemapped image (it is typeless)
             target hud_snapshot; // upscaling: scene at the resolve point, before the cockpit HUD
             target hud_mask; // upscaling: R8, 1 where the HUD was drawn (ps_hud_mask)
+            target hud_mask_prev; // AMD frame generation HUD layer: last frame's hud_mask
+            bool hud_mask_prev_valid = false;
             target reactive_snapshot; // scene right before the first transparent draw
             target reactive; // R8 reactive mask (ps_reactive)
             target dlss_mask; // R8 max(HUD mask, reactive mask) given to DLSS / XeSS
@@ -136,6 +138,8 @@ namespace edaa
         std::atomic<bool> fg_snapshot_taken{ false }; // read by the resolve caller
         ComPtr<ID3D11RenderTargetView> fg_motion_rtv; // on the shared motion texture
         ID3D11Texture2D* fg_motion_rtv_tex = nullptr;
+        ComPtr<ID3D11RenderTargetView> fg_layer_rtv; // on AMD frame generation's HUD layer
+        ID3D11Texture2D* fg_layer_rtv_tex = nullptr;
 
 
         // Inverse of a 4x4 matrix (row-major), in double precision. Returns false if singular.
@@ -239,6 +243,7 @@ namespace edaa
                 SUCCEEDED(device->CreatePixelShader(g_ps_fg_motion_keep, sizeof(g_ps_fg_motion_keep), nullptr, &gpu.ps_fg_motion_keep)) &&
                 SUCCEEDED(device->CreatePixelShader(g_ps_hud_motion, sizeof(g_ps_hud_motion), nullptr, &gpu.ps_hud_motion)) &&
                 SUCCEEDED(device->CreatePixelShader(g_ps_reactive, sizeof(g_ps_reactive), nullptr, &gpu.ps_reactive)) &&
+                SUCCEEDED(device->CreatePixelShader(g_ps_fg_hud_ui, sizeof(g_ps_fg_hud_ui), nullptr, &gpu.ps_fg_hud_ui)) &&
                 SUCCEEDED(device->CreateSamplerState(&sampler, &gpu.linear_clamp)) &&
                 SUCCEEDED(device->CreateBlendState(&max_blend, &gpu.max_blend)) &&
                 create_buffer(sizeof(motion_constants), gpu.motion_cb) &&
@@ -296,6 +301,8 @@ namespace edaa
             gpu.depth_copy = {};
             gpu.hud_snapshot = {};
             gpu.hud_mask = {};
+            gpu.hud_mask_prev = {};
+            gpu.hud_mask_prev_valid = false;
             gpu.reactive_snapshot = {};
             gpu.reactive = {};
             gpu.dlss_mask = {};
@@ -1327,6 +1334,8 @@ namespace edaa
             watched_color = 0;
             fg_motion_rtv.Reset();
             fg_motion_rtv_tex = nullptr;
+            fg_layer_rtv.Reset();
+            fg_layer_rtv_tex = nullptr;
             fg_mask_valid = false;
             gpu = {};
         }
@@ -1845,6 +1854,67 @@ namespace edaa
             ctx->PSSetShader(hud_motion_done && gpu.ps_fg_motion_keep ? gpu.ps_fg_motion_keep.Get() : gpu.ps_fg_motion.Get(), nullptr, 0);
             ctx->Draw(3, 0);
             bind_srvs(ctx, {});
+            return true;
+        }
+        catch (...) {
+            return false;
+        }
+    }
+
+
+    bool fg::build_hud_layer(ID3D11DeviceContext* ctx, ID3D11Texture2D* back_buffer, DXGI_FORMAT view_format, ID3D11Texture2D* target)
+    {
+        try {
+            const std::lock_guard<std::mutex> lock(gpu_mutex);
+            ComPtr<ID3D11Device> device;
+            ctx->GetDevice(&device);
+
+            // Same condition as apply_hud_motion (called right after it, which consumes fg_mask_valid).
+            if (!fg_mask_valid || !upscale_in.hud_mask || device.Get() != gpu.device || !gpu.hud_mask.srv || !gpu.ps_fg_hud_ui) {
+                gpu.hud_mask_prev_valid = false;
+                return false;
+            }
+
+            D3D11_TEXTURE2D_DESC desc;
+            target->GetDesc(&desc);
+
+            if (fg_layer_rtv_tex != target || !fg_layer_rtv) {
+                fg_layer_rtv.Reset();
+                fg_layer_rtv_tex = nullptr;
+
+                if (FAILED(device->CreateRenderTargetView(target, nullptr, &fg_layer_rtv))) {
+                    return false;
+                }
+
+                fg_layer_rtv_tex = target;
+            }
+
+            // The back buffer changes every frame (flip model): a view for this one.
+            D3D11_SHADER_RESOURCE_VIEW_DESC sd = {};
+            sd.Format = view_format;
+            sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+            sd.Texture2D.MipLevels = 1;
+            ComPtr<ID3D11ShaderResourceView> back_srv;
+
+            if (FAILED(device->CreateShaderResourceView(back_buffer, &sd, &back_srv)) ||
+                (!gpu.hud_mask_prev.tex && !create_target(DXGI_FORMAT_R8_UNORM, gpu.hud_mask_prev))) {
+                return false;
+            }
+
+            const state_backup backup(ctx);
+            const gpu_profiler::scope timed(ctx, gpu_profiler::fg_out);
+            bind_fullscreen(ctx);
+            set_viewport(ctx, static_cast<float>(desc.Width), static_cast<float>(desc.Height));
+            bind_srvs(ctx, {});
+            ID3D11RenderTargetView* const targets[] = { fg_layer_rtv.Get() };
+            ctx->OMSetRenderTargets(1, targets, nullptr);
+            bind_srvs(ctx, { back_srv.Get(), gpu.hud_mask_prev_valid ? gpu.hud_mask_prev.srv.Get() : nullptr, nullptr, nullptr, gpu.hud_mask.srv.Get() });
+            ctx->PSSetShader(gpu.ps_fg_hud_ui.Get(), nullptr, 0);
+            ctx->Draw(3, 0);
+            bind_srvs(ctx, {});
+            ctx->OMSetRenderTargets(0, nullptr, nullptr);
+            ctx->CopyResource(gpu.hud_mask_prev.tex.Get(), gpu.hud_mask.tex.Get());
+            gpu.hud_mask_prev_valid = true;
             return true;
         }
         catch (...) {

@@ -536,6 +536,14 @@ namespace edaa
             }
 
             edit(ImGui::Checkbox("Keep the cockpit HUD steady (no smearing in generated frames)", &s.config.fg_hud_protect));
+
+            if (s.config.fg_backend == 1) {
+                edit(ImGui::Checkbox("AMD: cockpit HUD from the newest real frame (no double HUD)", &s.config.fg_amd_hud_ui));
+
+                if (s.config.fg_amd_hud_ui && !s.config.fg_hud_protect) {
+                    ImGui::TextDisabled("Needs \"Keep the cockpit HUD steady\".");
+                }
+            }
             ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
             edit(ImGui::SliderInt("Frame limit (displayed FPS, 0 = off)", &s.config.fg_fps_limit, 0, 360));
             ImGui::TextDisabled("Use this limit only (no external limiter): set it just below the refresh rate, e.g. 140 at 144 Hz.");
