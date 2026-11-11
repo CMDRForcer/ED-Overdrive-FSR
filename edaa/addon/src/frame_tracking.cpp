@@ -28,6 +28,11 @@
 #include <unordered_set>
 #include <vector>
 
+#if EDAA_DEVELOPER
+#include <Windows.h>
+#include <d3dcompiler.h>
+#endif
+
 using namespace reshade::api;
 
 namespace edaa
@@ -60,6 +65,10 @@ namespace edaa
             uint64_t ps_pipeline = 0; // bound pixel shader pipeline
             uint8_t panel_srv = 0; // hud_learn: slots holding a HUD panel texture
             uint32_t ps_srv_w[8] = {}, ps_srv_h[8] = {};
+            // Vertex shader and its textures (slots 0-3, kept only while tracing).
+            uint64_t vs_hash = 0, vs_pipeline = 0;
+            uint64_t vs_srv[4] = {};
+            uint32_t vs_srv_w[4] = {}, vs_srv_h[4] = {}, vs_srv_fmt[4] = {};
         };
 
         // Depth-stencil state objects that pass the geometry test, and pixel
@@ -71,6 +80,13 @@ namespace edaa
         std::unordered_set<uint64_t> map_shaders;
         // For the frame trace: pixel shader hashes, blend and depth-write states.
         std::unordered_map<uint64_t, uint64_t> pixel_hashes;
+        std::unordered_map<uint64_t, uint64_t> vertex_hashes;
+#if EDAA_DEVELOPER
+        // Developer build: vertex shader bytecode, disassembled into the frame trace
+        // for draws whose vertex shader reads textures (e.g. the tonemap's exposure).
+        std::unordered_map<uint64_t, std::vector<uint8_t>> vertex_code;
+        std::unordered_set<uint64_t> vertex_logged; // per trace
+#endif
         std::unordered_map<uint64_t, bool> blend_states, depth_writes;
         std::unordered_map<uint64_t, int> depth_funcs;
 
@@ -189,6 +205,21 @@ namespace edaa
                     continue;
                 }
 
+                if (subobjects[i].type == pipeline_subobject_type::vertex_shader && subobjects[i].data != nullptr) {
+                    const auto& desc = *static_cast<const shader_desc*>(subobjects[i].data);
+                    const uint64_t hash = desc.code != nullptr ? shader_hash(desc.code, desc.code_size) : 0;
+
+                    const std::lock_guard<std::mutex> lock(pipelines_mutex);
+                    vertex_hashes[pipeline.handle] = hash;
+#if EDAA_DEVELOPER
+                    if (desc.code != nullptr) {
+                        const auto* const code = static_cast<const uint8_t*>(desc.code);
+                        vertex_code[pipeline.handle].assign(code, code + desc.code_size);
+                    }
+#endif
+                    continue;
+                }
+
                 if (subobjects[i].type == pipeline_subobject_type::pixel_shader && subobjects[i].data != nullptr) {
                     const auto& desc = *static_cast<const shader_desc*>(subobjects[i].data);
                     const uint64_t hash = desc.code != nullptr ? shader_hash(desc.code, desc.code_size) : 0;
@@ -265,8 +296,9 @@ namespace edaa
             const bool pixel = (stages & pipeline_stage::pixel_shader) != 0;
             const bool blend = (stages & pipeline_stage::output_merger) != 0;
             const bool compute = (stages & pipeline_stage::compute_shader) != 0;
+            const bool vertex = (stages & pipeline_stage::vertex_shader) != 0;
 
-            if (!depth && !pixel && !blend && !compute) {
+            if (!depth && !pixel && !blend && !compute && !vertex) {
                 return;
             }
 
@@ -290,6 +322,12 @@ namespace edaa
             if (blend) {
                 const auto it = blend_states.find(pipeline.handle);
                 ctx->blend_on = it != blend_states.end() && it->second;
+            }
+
+            if (vertex) {
+                ctx->vs_pipeline = pipeline.handle;
+                const auto h = vertex_hashes.find(pipeline.handle);
+                ctx->vs_hash = h != vertex_hashes.end() ? h->second : 0;
             }
 
             if (compute) {
@@ -398,6 +436,60 @@ namespace edaa
         }
 
 
+#if EDAA_DEVELOPER
+        // Frame trace: the disassembly of a vertex shader that reads textures, once per trace.
+        void log_vertex_disassembly(uint64_t pipeline_handle, uint64_t hash)
+        {
+            std::vector<uint8_t> code;
+            {
+                const std::lock_guard<std::mutex> lock(pipelines_mutex);
+
+                if (vertex_logged.size() >= 16 || !vertex_logged.insert(hash).second) {
+                    return;
+                }
+
+                const auto it = vertex_code.find(pipeline_handle);
+
+                if (it == vertex_code.end()) {
+                    return;
+                }
+
+                code = it->second;
+            }
+
+            using disassemble_fn = HRESULT(WINAPI*)(LPCVOID, SIZE_T, UINT, LPCSTR, ID3DBlob**);
+            static const auto disassemble = [] {
+                HMODULE module = GetModuleHandleW(L"d3dcompiler_47.dll");
+                module = module != nullptr ? module : LoadLibraryW(L"d3dcompiler_47.dll");
+                return module != nullptr ? reinterpret_cast<disassemble_fn>(GetProcAddress(module, "D3DDisassemble")) : nullptr;
+            }();
+            ID3DBlob* text = nullptr;
+
+            if (disassemble == nullptr || FAILED(disassemble(code.data(), code.size(), 0, nullptr, &text)) || text == nullptr) {
+                reshade::log::message(reshade::log::level::warning, "EDAA trace: vertex shader disassembly not available");
+                return;
+            }
+
+            const std::string all(static_cast<const char*>(text->GetBufferPointer()), text->GetBufferSize());
+            text->Release();
+            char head[64];
+            snprintf(head, sizeof(head), "EDAA vs %016llx:", static_cast<unsigned long long>(hash));
+            size_t start = 0;
+
+            while (start < all.size()) {
+                size_t end = all.find('\n', start);
+                end = end == std::string::npos ? all.size() : end;
+                const std::string line = all.substr(start, end - start);
+
+                if (line.find_first_not_of(" \r\t/", 0) != std::string::npos && line[0] != '\0') {
+                    reshade::log::message(reshade::log::level::info, (std::string(head) + " " + line).c_str());
+                }
+
+                start = end + 1;
+            }
+        }
+#endif
+
         void trace_draw(context_state* ctx, const char* kind, uint32_t count, uint32_t instances)
         {
             if (!tracing(ctx)) {
@@ -440,7 +532,29 @@ namespace edaa
                 }
             }
 
+            bool vs_reads = false;
+
+            if (m > 0 && m < static_cast<int>(sizeof(msg)) - 32) {
+                m += snprintf(msg + m, sizeof(msg) - m, " vs=%016llx", static_cast<unsigned long long>(ctx->vs_hash));
+            }
+
+            for (int i = 0; i < 4 && m > 0 && m < static_cast<int>(sizeof(msg)) - 48; ++i) {
+                if (ctx->vs_srv[i] != 0) {
+                    vs_reads = true;
+                    m += snprintf(msg + m, sizeof(msg) - m, " vt%d=%llx %ux%u fmt%u", i, static_cast<unsigned long long>(ctx->vs_srv[i]), ctx->vs_srv_w[i],
+                        ctx->vs_srv_h[i], ctx->vs_srv_fmt[i]);
+                }
+            }
+
             reshade::log::message(reshade::log::level::info, msg);
+
+#if EDAA_DEVELOPER
+            if (vs_reads) {
+                log_vertex_disassembly(ctx->vs_pipeline, ctx->vs_hash);
+            }
+#else
+            (void)vs_reads;
+#endif
         }
 
 
@@ -450,7 +564,7 @@ namespace edaa
             addon_state& s = state();
             const bool dumping = s.dumping.load(std::memory_order_relaxed), learning = s.hud_learning.load(std::memory_order_relaxed);
 
-            if ((!dumping && !learning) || update.type != descriptor_type::shader_resource_view || (stages & shader_stage::pixel) == 0) {
+            if ((!dumping && !learning) || update.type != descriptor_type::shader_resource_view) {
                 return;
             }
 
@@ -462,6 +576,28 @@ namespace edaa
 
             device* const dev = cmd_list->get_device();
             const auto* const views = static_cast<const resource_view*>(update.descriptors);
+
+            // Vertex shader textures (frame trace only).
+            if (dumping && (stages & shader_stage::vertex) != 0) {
+                for (uint32_t i = 0; i < update.count && update.binding + i < 4; ++i) {
+                    const uint32_t slot = update.binding + i;
+                    ctx->vs_srv[slot] = 0;
+                    ctx->vs_srv_w[slot] = ctx->vs_srv_h[slot] = ctx->vs_srv_fmt[slot] = 0;
+
+                    if (views[i].handle != 0) {
+                        const resource r = dev->get_resource_from_view(views[i]);
+                        const resource_desc d = dev->get_resource_desc(r);
+                        ctx->vs_srv[slot] = r.handle;
+                        ctx->vs_srv_w[slot] = d.texture.width;
+                        ctx->vs_srv_h[slot] = d.texture.height;
+                        ctx->vs_srv_fmt[slot] = static_cast<uint32_t>(d.texture.format);
+                    }
+                }
+            }
+
+            if ((stages & shader_stage::pixel) == 0) {
+                return;
+            }
 
             for (uint32_t i = 0; i < update.count; ++i) {
                 const uint32_t slot = update.binding + i;
