@@ -128,6 +128,12 @@ namespace edaa
             uint64_t layer_done[2] = {}; // AMD's copy of this layer ran by this value
             int layer_write = 0; // layer the next frame writes
             int layer_ready = -1; // layer built for the coming present (-1: none)
+            int layer_last = -1; // layer registered with the last present
+            bool layer_registered = false; // once registered, a layer stays registered (AMD waits without limit when it is dropped)
+            ComPtr<ID3D11RenderTargetView> layer_rtv[2]; // to clear a layer to transparent
+            ID3D11Texture2D* layer_rtv_tex[2] = {};
+            LARGE_INTEGER ffx_switched = {}; // last frame generation on/off switch
+            uint32_t slow_presents = 0; // AMD presents over 250 ms (logged)
 
             bool generator() const { return sl_on || ffx_on; } // a frame generation backend runs
         };
@@ -1537,11 +1543,23 @@ namespace edaa
             if (p.ffx_on) {
                 p.stale_frames = p.inputs_fresh || p.resolve_seen ? 0 : p.stale_frames + 1;
                 const int set = p.ready_set;
-                const bool on = generate && set >= 0 && p.depth12[set] && p.motion12[set] && p.inputs.render_w > 0 && p.stale_frames < 120 &&
-                    ffx_ensure_context();
+                const bool possible = set >= 0 && p.depth12[set] && p.motion12[set] && p.inputs.render_w > 0 && ffx_ensure_context();
+                const bool wanted = generate && p.stale_frames < 120;
+                // Switching AMD's interpolation on or off stops or starts its present
+                // threads: at most every half second (a hang was seen right after a quick off).
+                LARGE_INTEGER now, freq;
+                QueryPerformanceCounter(&now);
+                QueryPerformanceFrequency(&freq);
+                const bool hold = p.ffx_switched.QuadPart != 0 && now.QuadPart - p.ffx_switched.QuadPart < freq.QuadPart / 2;
+                const bool on = possible && (hold ? p.ffx_generating : wanted);
 
                 if (p.ffx_fg_ctx != nullptr) {
                     p.inputs.reset = p.inputs.reset || !p.inputs_fresh;
+
+                    if (on != p.ffx_generating) {
+                        p.ffx_switched = now;
+                    }
+
                     ffx_configure(on);
 
                     if (on) {
@@ -1551,7 +1569,15 @@ namespace edaa
                     ++p.ffx_frame_id;
                 }
 
-                ffx_register_layer(p.ffx_generating && p.layer_ready >= 0 ? p.layer12[p.layer_ready].Get() : nullptr);
+                // Once registered, always a layer (transparent when there is nothing to show):
+                // dropping it makes AMD free its copy and wait for all frames without limit.
+                const int layer = p.layer_ready >= 0 ? p.layer_ready : p.layer_registered ? p.layer_last : -1;
+
+                if (layer >= 0 && p.layer12[layer]) {
+                    ffx_register_layer(p.layer12[layer].Get());
+                    p.layer_registered = true;
+                    p.layer_last = layer;
+                }
             }
 #endif
 
@@ -1594,7 +1620,26 @@ namespace edaa
             }
 #endif
 
+            LARGE_INTEGER present_start;
+            QueryPerformanceCounter(&present_start);
             const HRESULT presented = p.swapchain->Present(0, p.tearing ? DXGI_PRESENT_ALLOW_TEARING : 0);
+
+#if EDAA_FSR
+            if (p.ffx_on) {
+                LARGE_INTEGER present_end, present_freq;
+                QueryPerformanceCounter(&present_end);
+                QueryPerformanceFrequency(&present_freq);
+                const double ms = static_cast<double>(present_end.QuadPart - present_start.QuadPart) * 1000.0 / static_cast<double>(present_freq.QuadPart);
+
+                if (ms > 250.0 && p.slow_presents < 20) {
+                    ++p.slow_presents;
+                    char msg[200];
+                    snprintf(msg, sizeof(msg), "EDAA FG: AMD present took %.0f ms (frame %llu, generating %d, layer %d)", ms,
+                        static_cast<unsigned long long>(p.frames), p.ffx_generating ? 1 : 0, p.layer_registered ? p.layer_last : -1);
+                    reshade::log::message(reshade::log::level::warning, msg);
+                }
+            }
+#endif
 
             // The shared textures are free again once the present work (and frame generation) ran.
             p.copy_done = ++p.fence_value;
@@ -1716,6 +1761,30 @@ namespace edaa
             const std::lock_guard<std::mutex> lock(presenter_mutex);
 #if EDAA_FSR
             p.layer_ready = layer_built ? layer_slot : -1;
+
+            // Nothing to show this frame, but a layer stays registered: a transparent one.
+            // (If both are still in use, the last one is registered again.)
+            if (!layer_built && p.layer_registered && p.ffx_on && !p.failed && p.shared11) {
+                const int slot = p.layer_write;
+                auto* const ctx = reinterpret_cast<ID3D11DeviceContext*>(runtime->get_command_queue()->get_immediate_command_list()->get_native());
+
+                if (share_input(p.shared11.Get(), p.layer11[slot], p.layer12[slot]) && wait_for(p.layer_done[slot], 0)) {
+                    if (p.layer_rtv_tex[slot] != p.layer11[slot].Get() || !p.layer_rtv[slot]) {
+                        p.layer_rtv[slot].Reset();
+                        p.layer_rtv_tex[slot] = nullptr;
+
+                        if (SUCCEEDED(p.device11->CreateRenderTargetView(p.layer11[slot].Get(), nullptr, &p.layer_rtv[slot]))) {
+                            p.layer_rtv_tex[slot] = p.layer11[slot].Get();
+                        }
+                    }
+
+                    if (p.layer_rtv[slot]) {
+                        const float transparent[4] = {};
+                        ctx->ClearRenderTargetView(p.layer_rtv[slot].Get(), transparent);
+                        p.layer_ready = slot;
+                    }
+                }
+            }
 #else
             (void)layer_built;
 #endif
@@ -1803,6 +1872,14 @@ namespace edaa
 
             p.layer_write = 0;
             p.layer_ready = -1;
+            p.layer_last = -1;
+            p.layer_registered = false;
+            p.ffx_switched = {};
+
+            for (int i = 0; i < 2; ++i) {
+                p.layer_rtv[i].Reset();
+                p.layer_rtv_tex[i] = nullptr;
+            }
 
             p.write_set = 0;
             p.ready_set = -1;
