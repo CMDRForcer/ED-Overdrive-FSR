@@ -63,6 +63,7 @@ namespace edaa
             EDAA_FIELD(upscale_mip_bias, boolean),
             EDAA_FIELD(record_full_frame, boolean),
             EDAA_FIELD(record_max_mb, integer),
+            EDAA_FIELD(record_delay_s, real),
             EDAA_FIELD(upscale_sharpness, real),
             EDAA_FIELD(fsr_sharpness, real),
             EDAA_FIELD(dlss_sharpness, real),

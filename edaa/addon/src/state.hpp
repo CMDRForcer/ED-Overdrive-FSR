@@ -79,6 +79,7 @@ namespace edaa
         int dlss_preset = 0; // DLSS model: 0 = NVIDIA's default (K for DLAA), else NVSDK_NGX_DLSS_Hint_Render_Preset (J 10, K 11, L 12, M 13)
         bool record_full_frame = false; // developer: recorder.cpp records the whole frame instead of the 1600x900 centre
         int record_max_mb = 4096; // developer: memory a recording may use before it stops
+        float record_delay_s = 0.0f; // developer: seconds between Ctrl+Shift+R and the start of a recording (time to get moving)
         float mip_bias_extra = 0; // developer, not saved: added to the upscaling mip bias
         bool upscaler_jitter_flip = false; // developer, not saved: negate the jitter passed to DLSS/XeSS (sign convention check)
         bool jitter_enabled = true; // follows taa_enabled unless changed in developer builds
@@ -409,6 +410,10 @@ namespace edaa
 
     // Overlay window registered with ReShade.
     void draw_overlay(reshade::api::effect_runtime* runtime);
+
+    // Developer builds: the recorder's line over the game (reshade_overlay event,
+    // also while the overlay is closed).
+    void draw_recorder_osd(reshade::api::effect_runtime* runtime);
 
     const char* to_string(frame_mode mode);
 }

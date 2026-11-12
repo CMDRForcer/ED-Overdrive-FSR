@@ -78,6 +78,11 @@ namespace edaa::recorder
     // One line for the overlay ("" when idle). Any thread.
     std::string status();
 
+    // Short on-screen line drawn over the game even with the overlay closed
+    // (countdown, REC, saving, saved for a few seconds), "" when there is
+    // nothing to show. 'alert' is set for the countdown, REC and errors. Any thread.
+    std::string osd(bool& alert);
+
     // At the resolve, after the motion vectors and the reactive mask (gpu_mutex
     // held, render thread): copies this frame's inputs, maps older ones.
     void frame(ID3D11Device* device, ID3D11DeviceContext* ctx, const sources& in, frame_params params, bool full_frame, uint32_t max_mb);

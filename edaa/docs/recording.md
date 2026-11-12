@@ -9,7 +9,12 @@ side with numbers instead of one more flight each.
 
 `Ctrl+Shift+R` (or "Start recording" in the developer section of the overlay)
 starts and stops; a high tone marks the start, a lower one the end of the
-writing (a long low tone: not saved, see the status line). Status:
+writing (a long low tone: not saved, see the status line). A line in the top
+left corner of the game shows the same, also with the overlay closed: "REC in
+3" (countdown), "REC 1.4 s", "saving 40 %", then "saved" (or the error) for
+five seconds. "Start delay (s)" (developer section, default 0) waits that
+long after Ctrl+Shift+R before recording, to get moving first; pressing again
+during the countdown cancels. Status:
 the line next to the button ("REC 2.1 s, 126 frames, 2.4 GB of 4.0").
 
 * What: per frame, at the resolve (`passes.cpp`, after the motion vectors and

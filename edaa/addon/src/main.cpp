@@ -131,6 +131,9 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID)
             edaa::register_fg_events();
             reshade::register_event<reshade::addon_event::reshade_present>(edaa::on_reshade_present);
             reshade::register_overlay("EDAA", edaa::draw_overlay);
+#if EDAA_DEVELOPER
+            reshade::register_event<reshade::addon_event::reshade_overlay>(edaa::draw_recorder_osd);
+#endif
             {
                 char msg[160];
                 snprintf(msg, sizeof(msg), "EDAA: loaded, version %s, build %s", edaa::version, edaa::build_stamp);
@@ -138,6 +141,9 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID)
             }
             break;
         case DLL_PROCESS_DETACH:
+#if EDAA_DEVELOPER
+            reshade::unregister_event<reshade::addon_event::reshade_overlay>(edaa::draw_recorder_osd);
+#endif
             reshade::unregister_overlay("EDAA", edaa::draw_overlay);
             reshade::unregister_event<reshade::addon_event::reshade_present>(edaa::on_reshade_present);
             edaa::unregister_fg_events();

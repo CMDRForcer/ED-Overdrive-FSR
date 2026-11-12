@@ -535,6 +535,12 @@ namespace edaa
             edit(ImGui::Checkbox("Whole frame (else the 1600x900 centre)##rec", &s.config.record_full_frame));
             ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
             edit(ImGui::SliderInt("Memory limit (MB)##rec", &s.config.record_max_mb, 256, 32768, "%d", ImGuiSliderFlags_Logarithmic));
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+            edit(ImGui::SliderFloat("Start delay (s)##rec", &s.config.record_delay_s, 0.0f, 10.0f, "%.0f"));
+
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Time between Ctrl+Shift+R and the start, to get moving first. Pressing again during the countdown cancels.");
+            }
 
             ImGui::Text("Capture: %s %s", s.capture_status, s.last_capture_folder.c_str());
 
@@ -765,6 +771,30 @@ namespace edaa
         }
     }
 #endif
+
+
+    void draw_recorder_osd(reshade::api::effect_runtime*)
+    {
+#if EDAA_DEVELOPER
+        bool alert = false;
+        const std::string line = recorder::osd(alert);
+
+        if (line.empty()) {
+            return;
+        }
+
+        ImGui::SetNextWindowPos(ImVec2(24, 24), ImGuiCond_Always);
+        ImGui::SetNextWindowBgAlpha(0.7f);
+        const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
+            ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove;
+
+        if (ImGui::Begin("##edaa_recorder_osd", nullptr, flags)) {
+            ImGui::TextColored(alert ? ImVec4(1.0f, 0.25f, 0.2f, 1.0f) : ImVec4(0.9f, 0.9f, 0.9f, 1.0f), "%s", line.c_str());
+        }
+
+        ImGui::End();
+#endif
+    }
 
 
     void draw_overlay(reshade::api::effect_runtime*)

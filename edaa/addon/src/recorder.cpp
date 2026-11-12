@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
@@ -94,6 +95,9 @@ namespace edaa::recorder
         std::string message; // last status line when idle
         float write_progress = 0;
         double started = 0, last_time = 0;
+        std::atomic<double> start_at = 0; // countdown (record_delay_s): start time, 0 = none
+        double finished_at = 0; // when the last recording was saved or failed (on-screen line)
+        bool finished_ok = false;
         uint32_t rec_render_w = 0, rec_render_h = 0, rec_crop_x = 0, rec_crop_y = 0, rec_crop_w = 0, rec_crop_h = 0, rec_color_format = 0;
 
 
@@ -379,6 +383,8 @@ namespace edaa::recorder
                     {
                         const std::lock_guard<std::mutex> lock(mutex);
                         message = ok ? "saved to " + narrow(folder) : "not saved: " + error;
+                        finished_at = now();
+                        finished_ok = ok;
                         frames.clear();
                         bytes = 0;
                         worker_running = false;
@@ -544,15 +550,34 @@ namespace edaa::recorder
     {
         // The folder is read here: frame() runs with gpu_mutex held and must not take the state lock.
         std::string base;
+        float delay = 0;
         {
             addon_state& s = state();
             const std::lock_guard<std::recursive_mutex> lock(s.mutex);
             base = s.capture_path;
+            delay = std::clamp(s.config.record_delay_s, 0.0f, 10.0f);
         }
         {
             const std::lock_guard<std::mutex> lock(mutex);
             folder_base = widen(base) + L"\\recordings";
         }
+
+        // Countdown running: a second press cancels it.
+        if (start_at.load() > 0) {
+            start_at.store(0);
+            const std::lock_guard<std::mutex> lock(mutex);
+            message = "start cancelled";
+            log("start cancelled");
+            return;
+        }
+
+        // Start after the delay (frame() starts it), stop at once.
+        if (phase.load() == phase_t::idle && delay > 0) {
+            start_at.store(now() + delay);
+            log("starting in " + std::to_string(static_cast<int>(std::ceil(delay))) + " s");
+            return;
+        }
+
         toggle_requested.store(true);
     }
 
@@ -579,13 +604,58 @@ namespace edaa::recorder
                 snprintf(text, sizeof(text), "writing %d %% to %s", static_cast<int>(write_progress * 100.0f), narrow(folder).c_str());
                 return text;
             default:
+                if (start_at.load() > 0) {
+                    snprintf(text, sizeof(text), "starting in %.1f s (Ctrl+Shift+R cancels)", std::max(0.0, start_at.load() - now()));
+                    return text;
+                }
+
                 return message;
+        }
+    }
+
+
+    std::string osd(bool& alert)
+    {
+        const phase_t p = phase.load();
+        const double t = now();
+        char text[160];
+        alert = true;
+
+        if (p == phase_t::idle && start_at.load() > 0) {
+            snprintf(text, sizeof(text), "REC in %d", static_cast<int>(std::ceil(std::max(0.0, start_at.load() - t))));
+            return text;
+        }
+
+        const std::lock_guard<std::mutex> lock(mutex);
+
+        switch (p) {
+            case phase_t::recording:
+                snprintf(text, sizeof(text), "REC %.1f s", last_time);
+                return text;
+            case phase_t::stopping:
+            case phase_t::writing:
+                alert = false;
+                snprintf(text, sizeof(text), "saving %d %%", static_cast<int>(write_progress * 100.0f));
+                return text;
+            default:
+                if (finished_at > 0 && t - finished_at < 5.0) {
+                    alert = !finished_ok;
+                    return finished_ok ? std::string("saved") : message;
+                }
+
+                return {};
         }
     }
 
 
     void frame(ID3D11Device* device, ID3D11DeviceContext* ctx, const sources& in, frame_params params, bool full_frame, uint32_t max_mb)
     {
+        // Countdown over: start now.
+        if (const double at = start_at.load(); at > 0 && now() >= at && phase.load() == phase_t::idle) {
+            start_at.store(0);
+            toggle_requested.store(true);
+        }
+
         if (toggle_requested.exchange(false)) {
             const phase_t p = phase.load();
 
