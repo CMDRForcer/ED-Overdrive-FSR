@@ -288,6 +288,7 @@ namespace
         float exposure = 10.0f;
         std::vector<float> sharpen = { 0.0f }; // one variant per value (DLAA only)
         std::string taa; // TAA only: setting overrides "key=value;..." (taa_override), from --taa
+        bool reactive = true; // DLAA only: pass the recorded reactive mask (dlss_reactive_mask)
     };
 
     // Experiment values that are not add-on settings (yet).
@@ -341,6 +342,7 @@ namespace
             { "dlaa", "DLAA, Belichtung fest 10", kind::dlaa, 0, 1, 10.0f, { 0.0f, 0.3f, 0.6f } },
             { "dlaa_elite", "DLAA, Belichtung von Elite", kind::dlaa, 0, 2, 10.0f },
             { "dlaa_auto", "DLAA, Belichtung von DLSS", kind::dlaa, 0, 0, 0.0f },
+            { "dlaa_noreact", "DLAA, fest 10, ohne Reaktivmaske", kind::dlaa, 0, 1, 10.0f, { 0.0f }, {}, false },
             { "dlaa_j", "DLAA Modell J, fest 10", kind::dlaa, 10, 1, 10.0f },
             { "dlaa_l", "DLAA Modell L, fest 10", kind::dlaa, 12, 1, 10.0f },
             { "dlaa_m", "DLAA Modell M, fest 10", kind::dlaa, 13, 1, 10.0f },
@@ -823,7 +825,7 @@ namespace
                 u.reset = reset;
                 u.dlss_preset = run.preset;
                 u.dlss_exposure = run.exposure_mode == 0 ? 0.0f : run.exposure;
-                u.hud_mask = (p.flags & edaa::recorder::flag_reactive) ? g.reactive.tex.Get() : nullptr;
+                u.hud_mask = run.reactive && (p.flags & edaa::recorder::flag_reactive) ? g.reactive.tex.Get() : nullptr;
 
                 if (run.exposure_mode == 2) {
                     const float scale = p.dlss_exposure_scale > 0 ? p.dlss_exposure_scale : 1.0f;

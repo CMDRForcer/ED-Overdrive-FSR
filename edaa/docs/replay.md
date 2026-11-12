@@ -27,6 +27,7 @@ Runs (all by default):
 | `dlaa` | DLAA, NVIDIA's default model, exposure fixed 10; also sharpened 0.3 and 0.6 (`ps_sharpen_hdr`) |
 | `dlaa_elite` | DLAA, exposure from Elite (computed from the recorded tonemap constants) |
 | `dlaa_auto` | DLAA, exposure estimated by DLSS |
+| `dlaa_noreact` | `dlaa` without the recorded reactive mask |
 | `dlaa_j`, `dlaa_l`, `dlaa_m` | DLAA models J, L, M, exposure fixed 10 |
 
 Each run uses the add-on's own code: the shaders of `taa.hlsl` and
@@ -34,6 +35,12 @@ Each run uses the add-on's own code: the shaders of `taa.hlsl` and
 `tools/replay/reshade_shim.cpp`). The motion vectors are rescaled from the
 whole render size to the crop. The result is written into an R11G11B10
 target like the game's scene, then read back.
+
+Reactive mask (12.11., all 12 recordings, `dlaa` against `dlaa_noreact`): the
+output is identical to the last bit with models K and M, though the mask
+covers up to a third of the pixels in stations and on foot. The transformer
+models evidently ignore `pInBiasCurrentColorMask`; the mask (and the HUD mask
+passed the same way) only costs its ~0.05 ms with them.
 
 TAA experiments run with changed settings, in addition to the list ("-"
 alone: only the experiments):
