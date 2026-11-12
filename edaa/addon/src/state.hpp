@@ -102,7 +102,7 @@ namespace edaa
         bool hud_motion = false; // upscaling: the cockpit HUD (HUD mask) gets the vehicle's motion vectors, not the world's behind it
         bool hud_learn = false; // find the cockpit HUD shader by the HUD panel textures it reads (shader replaced, e.g. EDHM)
         bool taa_soft_offscreen = true; // reuse the edge of the history for pixels entering the screen
-        bool taa_sharp = false; // sharper native TAA: samples near the pixel centre count more, the history is sharpened by what resampling blurs, output sharpened 0.6 (docs/replay.md study)
+        bool taa_sharp = false; // sharper native TAA: samples near the pixel centre count more, output sharpened 0.6 (docs/replay.md study)
         float taa_hdr_scale = 30.0f; // scene values are multiplied by this before the HDR compression c/(1+c) (30: chosen in game)
 
         bool motion_enabled = true;

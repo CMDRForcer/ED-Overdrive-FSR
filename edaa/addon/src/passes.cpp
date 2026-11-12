@@ -751,13 +751,13 @@ namespace edaa
             tc.flicker[3] = config.taa_soft_offscreen ? 1.0f : 0.0f;
             tc.hdr[0] = config.taa_hdr_scale;
 
-            // Sharper TAA (ps_taa): jitter weighting strength, history sharpening,
-            // and the normaliser 1 / mean of exp(-k d^2) over the jitter square.
+            // Sharper TAA (ps_taa): jitter weighting strength and the normaliser
+            // 1 / mean of exp(-k d^2) over the jitter square. History sharpening
+            // (hdr.z) stays off: it feeds back and flickered 2-5x in motion (replay, 12.11.).
             if (config.taa_sharp) {
                 constexpr double k = 8.0;
                 const double axis = std::sqrt(3.14159265358979 / k) * std::erf(std::sqrt(k) / 2);
                 tc.hdr[1] = static_cast<float>(k);
-                tc.hdr[2] = 1.0f;
                 tc.hdr[3] = static_cast<float>(1.0 / (axis * axis));
             }
         }

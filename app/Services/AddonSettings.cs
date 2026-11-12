@@ -74,7 +74,7 @@ public static class AddonSettings
         new("Hochskalieren (nur unter 1,0 Supersampling)", "upscale_sharpness", "Schärfe bei TAA-Hochskalierung", "", SettingKind.Real, "0.5", 0, 1),
         new("Hochskalieren (nur unter 1,0 Supersampling)", "upscale_hud_mask", "HUD ohne Nachzieher", "", SettingKind.Toggle, "1"),
         new("Hochskalieren (nur unter 1,0 Supersampling)", "upscale_mip_bias", "Texturen in Ausgabeauflösung", "", SettingKind.Toggle, "1", Expert: true),
-        new("TAA", "taa_sharp", "Schärfere TAA", "Etwas schärferes Bild bei etwas mehr Flimmern (gemessen: Schärfe +6, bleibt ruhiger als DLAA).", SettingKind.Toggle, "0"),
+        new("TAA", "taa_sharp", "Schärfere TAA", "Etwas schärferes Bild bei wenig mehr Flimmern (gemessen: Schärfe +6, bleibt ruhiger als DLAA).", SettingKind.Toggle, "0"),
         new("TAA", "taa_history_weight", "Anteil der Vorbilder", "Mehr ist ruhiger, aber unschärfer.", SettingKind.Real, "0.93", 0.5, 0.98, Expert: true),
         new("TAA", "taa_history_weight_motion", "Anteil der Vorbilder bei Bewegung", "Weniger gibt weniger Nachzieher, aber mehr Treppenstufen.", SettingKind.Real, "0.9", 0.3, 0.95, Expert: true),
         new("TAA", "taa_history_weight_min", "Mindestanteil gegen Flimmern", "", SettingKind.Real, "0.95", 0.5, 0.95, Expert: true),
