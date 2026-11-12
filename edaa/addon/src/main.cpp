@@ -2,6 +2,7 @@
 
 #include "events.hpp"
 #include "gpu_profiler.hpp"
+#include "recorder.hpp"
 #include "state.hpp"
 
 #include <Windows.h>
@@ -45,7 +46,7 @@ namespace edaa
     {
         // Hotkeys: Ctrl+Shift+T toggles TAA (and jitter, saved), Ctrl+Shift+N
         // next test scene marker of the GPU timings log (-, A..E). Developer builds
-        // also: Ctrl+Shift+J jitter alone, Ctrl+Shift+M debug view, Ctrl+Shift+C capture,
+        // also: Ctrl+Shift+J jitter alone, Ctrl+Shift+M debug view, Ctrl+Shift+C capture, Ctrl+Shift+R recording,
         // Ctrl+Shift+Page Down / Page Up / Home pass cycler.
         void on_reshade_present(reshade::api::effect_runtime* runtime)
         {
@@ -78,6 +79,10 @@ namespace edaa
             if (runtime->is_key_pressed('C')) {
                 const std::lock_guard<std::recursive_mutex> lock(s.mutex);
                 s.capture_requested = true;
+            }
+
+            if (runtime->is_key_pressed('R')) {
+                recorder::toggle();
             }
 
             // Pass cycler: Page Down / Page Up skip the next / previous shader, Home none.

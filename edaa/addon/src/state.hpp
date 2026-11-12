@@ -77,6 +77,8 @@ namespace edaa
         float dlss_exposure_scale = 1.0f; // dlss_exposure_mode 2: Elite's exposure times this
         float dlss_sharpness = 0.0f; // DLAA: sharpening of its output 0..1 (ps_sharpen_hdr), 0 = off
         int dlss_preset = 0; // DLSS model: 0 = NVIDIA's default (K for DLAA), else NVSDK_NGX_DLSS_Hint_Render_Preset (J 10, K 11, L 12, M 13)
+        bool record_full_frame = false; // developer: recorder.cpp records the whole frame instead of the 1600x900 centre
+        int record_max_mb = 4096; // developer: memory a recording may use before it stops
         float mip_bias_extra = 0; // developer, not saved: added to the upscaling mip bias
         bool upscaler_jitter_flip = false; // developer, not saved: negate the jitter passed to DLSS/XeSS (sign convention check)
         bool jitter_enabled = true; // follows taa_enabled unless changed in developer builds

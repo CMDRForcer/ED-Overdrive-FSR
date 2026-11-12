@@ -60,6 +60,8 @@ namespace edaa
             EDAA_FIELD(game_upscale, boolean),
             EDAA_FIELD(upscale_hud_mask, boolean),
             EDAA_FIELD(upscale_mip_bias, boolean),
+            EDAA_FIELD(record_full_frame, boolean),
+            EDAA_FIELD(record_max_mb, integer),
             EDAA_FIELD(upscale_sharpness, real),
             EDAA_FIELD(fsr_sharpness, real),
             EDAA_FIELD(dlss_sharpness, real),

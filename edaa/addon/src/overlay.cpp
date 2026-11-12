@@ -13,6 +13,7 @@
 #include "xess.hpp"
 #include "fsr.hpp"
 #include "state.hpp"
+#include "recorder.hpp"
 #include "exposure.hpp"
 
 #include <cstdio>
@@ -516,6 +517,19 @@ namespace edaa
             if (ImGui::Button("Capture now")) {
                 s.capture_requested = true;
             }
+
+            ImGui::Separator();
+            ImGui::TextUnformatted("Recording for replay (Ctrl+Shift+R): AA inputs into <capture folder>\\recordings");
+
+            if (ImGui::Button(recorder::active() ? "Stop recording" : "Start recording")) {
+                recorder::toggle();
+            }
+
+            ImGui::SameLine();
+            ImGui::TextUnformatted(recorder::status().c_str());
+            edit(ImGui::Checkbox("Whole frame (else the 1600x900 centre)##rec", &s.config.record_full_frame));
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+            edit(ImGui::SliderInt("Memory limit (MB)##rec", &s.config.record_max_mb, 256, 32768, "%d", ImGuiSliderFlags_Logarithmic));
 
             ImGui::Text("Capture: %s %s", s.capture_status, s.last_capture_folder.c_str());
 

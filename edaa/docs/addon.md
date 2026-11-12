@@ -288,6 +288,10 @@ The TAA values below are in the developer build's "TAA tuning and game fixes".
   statistics) to `<capture folder>/<date_time>/`,
   and traces that frame into `ReShade.log`. Keep doing the same thing
   (still, or turning steadily) during the capture.
+* **Recording for replay** (`Ctrl+Shift+R`, `recorder.cpp`): the AA inputs of
+  every frame (scene, depth, motion vectors, masks, tonemap constants,
+  parameters) into `<capture folder>/recordings/`, see
+  [recording.md](recording.md).
 * **Frame trace** ("Dump/trace next frame"): one frame of all render target
   bindings and of the draws that touch the scene depth or HDR target (up to
   20000 lines) in `ReShade.log`, with pixel shader hash, depth test and compare

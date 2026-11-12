@@ -83,6 +83,7 @@ add_library(edaa SHARED
 	addon/src/object_motion.cpp
 	addon/src/overlay.cpp
 	addon/src/capture.cpp
+	addon/src/recorder.cpp
 	addon/src/settings.cpp
 	addon/src/dlss.cpp
 	addon/src/xess.cpp
