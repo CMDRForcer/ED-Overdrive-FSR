@@ -75,6 +75,7 @@ namespace edaa
         int dlss_exposure_mode = 0; // DLAA exposure: 0 estimated by DLSS, 1 fixed (dlss_exposure), 2 Elite's own (exposure.hpp; dlss_exposure when not found)
         float dlss_exposure = 10.0f; // fixed DLAA exposure, multiplier of the HDR scene values (10 looked best in game, 11.11.)
         float dlss_exposure_scale = 1.0f; // dlss_exposure_mode 2: Elite's exposure times this
+        float dlss_sharpness = 0.0f; // DLAA: sharpening of its output 0..1 (ps_sharpen_hdr), 0 = off
         int dlss_preset = 0; // DLSS model: 0 = NVIDIA's default (K for DLAA), else NVSDK_NGX_DLSS_Hint_Render_Preset (J 10, K 11, L 12, M 13)
         float mip_bias_extra = 0; // developer, not saved: added to the upscaling mip bias
         bool upscaler_jitter_flip = false; // developer, not saved: negate the jitter passed to DLSS/XeSS (sign convention check)

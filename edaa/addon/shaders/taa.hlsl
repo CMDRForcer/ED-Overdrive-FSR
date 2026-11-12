@@ -466,3 +466,36 @@ float3 ps_copy(float4 pos : SV_Position) : SV_Target
 {
     return history_tex.Load(int3(pos.xy, 0)).rgb;
 }
+
+
+// DLAA output (t1, HDR before the game's exposure) sharpened into the game's
+// scene target: the same contrast-adaptive weights as ps_sharpen, computed on
+// the HDR compressed by tonemap() (hdr.x) so bright stars and engines do not
+// dominate, and the result limited to the 4 neighbours' range (like AMD RCAS)
+// so edges get steeper without bright or dark rims. DLSS keeps its own
+// history, so the sharpened copy is never fed back. sharpen.x: 0..1.
+float3 ps_sharpen_hdr(float4 pos : SV_Position) : SV_Target
+{
+    const int2 p = int2(pos.xy);
+    const int2 last = int2(render_size.xy) - 1;
+    const float3 raw = history_tex.Load(int3(p, 0)).rgb;
+
+    if (sharpen.x <= 0) {
+        return raw;
+    }
+
+    const float3 c = tonemap(raw);
+    const float3 n = tonemap(history_tex.Load(int3(clamp(p + int2(0, -1), int2(0, 0), last), 0)).rgb);
+    const float3 s = tonemap(history_tex.Load(int3(clamp(p + int2(0, 1), int2(0, 0), last), 0)).rgb);
+    const float3 w = tonemap(history_tex.Load(int3(clamp(p + int2(-1, 0), int2(0, 0), last), 0)).rgb);
+    const float3 e = tonemap(history_tex.Load(int3(clamp(p + int2(1, 0), int2(0, 0), last), 0)).rgb);
+    const float3 lo4 = min(min(n, s), min(w, e));
+    const float3 hi4 = max(max(n, s), max(w, e));
+    const float3 lo = min(c, lo4);
+    const float3 hi = max(c, hi4);
+    const float3 amount = sqrt(saturate(min(lo, 1 - hi) / max(hi, 1e-4)));
+    const float3 weight = -amount / lerp(8.0, 5.0, sharpen.x);
+    const float3 sharp = (c + (n + s + w + e) * weight) / (1 + 4 * weight);
+    // At most as dark or as bright as the darkest/brightest neighbour or the pixel itself.
+    return untonemap(clamp(sharp, lo, min(hi, 0.999)));
+}

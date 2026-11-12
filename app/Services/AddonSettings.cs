@@ -49,7 +49,7 @@ public static class AddonSettings
         All.SelectMany(s => s.Keys.Select(k => (k, s.Default))).ToDictionary(p => p.k, p => p.Default);
 
     // The values worth changing. Defaults as in docs/plan.md, ranges as the overlay's sliders.
-    public static AddonSetting[] All => AllSettings.Where(s => Vendor.Nvidia || s.Key is not ("fg_backend" or "dlss_preset"))
+    public static AddonSetting[] All => AllSettings.Where(s => Vendor.Nvidia || s.Key is not ("fg_backend" or "dlss_preset" or "dlss_sharpness"))
         .Select(s => Vendor.Amd && s.Key == "aa_method" ? s with { Default = "3" } : s).ToArray();
 
     static readonly AddonSetting[] AllSettings = [
@@ -61,6 +61,7 @@ public static class AddonSettings
         new("Frame Generation", "fg_fps_limit", "Bildlimit (angezeigte FPS, 0 = aus)", "Knapp unter der Bildwiederholrate, zum Beispiel 140 bei 144 Hz. Keinen zweiten Limiter nutzen.", SettingKind.Whole, "140", 0, 360),
         new("Kantenglättung", "aa_method", "Methode", "AMD FSR ist experimentell: FSR 4 auf Radeon RX 6000 und neuer, sonst FSR 3.1.", SettingKind.Choice, "1", Choices: Methods),
         new("Kantenglättung", "fsr_sharpness", "FSR-Schärfe (0 = aus)", "Nur für AMD FSR.", SettingKind.Real, "0", 0, 1),
+        new("Kantenglättung", "dlss_sharpness", "DLAA nachschärfen (0 = aus)", "Gibt Kanten und feinen Details nach DLAA etwas Kontrast zurück. 0.3 ist ein guter Start, zu viel macht Kanten hart und dunkle Flächen körnig. HUD und Hologramme werden nicht geschärft.", SettingKind.Real, "0", 0, 1),
         new("Kantenglättung", "dlss_preset", "DLAA-Modell", "Das Modell, das EDAA bei NVIDIA anfordert.", SettingKind.Choice, "11", Choices: DlaaModels),
         new("Kantenglättung", "dlss_exposure_mode", "DLAA-Belichtung", "Von Elite: DLAA bekommt Elites eigene Belichtung, ruhiger in sehr dunklen und grellen Szenen (experimentell). Fest: der Wert darunter.", SettingKind.Choice, "0", Choices: DlaaExposure),
         new("Kantenglättung", "dlss_exposure", "Feste DLAA-Belichtung", "Bei „Fest“, und bei „Von Elite“, solange Elites Wert nicht gefunden ist. 10 sah im Test am besten aus.", SettingKind.Real, "10", 0.1, 100),

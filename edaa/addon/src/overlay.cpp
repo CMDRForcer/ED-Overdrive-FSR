@@ -216,6 +216,14 @@ namespace edaa
                 }
 #endif
 
+                // Sharpening of the DLAA output (ps_sharpen_hdr), off at 0.
+                ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+                edit(ImGui::SliderFloat("Sharpening (0 = off)##dlss", &s.config.dlss_sharpness, 0.0f, 1.0f, "%.2f"));
+
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Gives DLAA's edges and fine detail back some contrast.\n0.3 is a good start; too much makes edges harsh and dark areas grainy.\nHUD and holograms are not sharpened.");
+                }
+
                 // Reactive mask: the current frame where transparents were drawn.
                 edit(ImGui::Checkbox("Reactive mask (particles, glass, glows: no trails)", &s.config.dlss_reactive_mask));
 

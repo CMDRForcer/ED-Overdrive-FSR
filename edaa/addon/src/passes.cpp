@@ -94,7 +94,7 @@ namespace edaa
         {
             ID3D11Device* device = nullptr; // not owned
             ComPtr<ID3D11VertexShader> vs;
-            ComPtr<ID3D11PixelShader> ps_motion, ps_debug, ps_taa, ps_copy, ps_hud_mask, ps_taau, ps_sharpen, ps_fg_motion, ps_hud_motion, ps_fg_motion_keep, ps_reactive, ps_fg_hud_ui, ps_ship_auto, ps_exposure;
+            ComPtr<ID3D11PixelShader> ps_motion, ps_debug, ps_taa, ps_copy, ps_hud_mask, ps_taau, ps_sharpen, ps_sharpen_hdr, ps_fg_motion, ps_hud_motion, ps_fg_motion_keep, ps_reactive, ps_fg_hud_ui, ps_ship_auto, ps_exposure;
             ComPtr<ID3D11Buffer> motion_cb, taa_cb, object_cb, exposure_cb;
             ComPtr<ID3D11SamplerState> linear_clamp;
             ComPtr<ID3D11BlendState> max_blend; // HUD mask accumulation
@@ -258,6 +258,7 @@ namespace edaa
                 SUCCEEDED(device->CreatePixelShader(g_ps_hud_mask, sizeof(g_ps_hud_mask), nullptr, &gpu.ps_hud_mask)) &&
                 SUCCEEDED(device->CreatePixelShader(g_ps_taau, sizeof(g_ps_taau), nullptr, &gpu.ps_taau)) &&
                 SUCCEEDED(device->CreatePixelShader(g_ps_sharpen, sizeof(g_ps_sharpen), nullptr, &gpu.ps_sharpen)) &&
+                SUCCEEDED(device->CreatePixelShader(g_ps_sharpen_hdr, sizeof(g_ps_sharpen_hdr), nullptr, &gpu.ps_sharpen_hdr)) &&
                 SUCCEEDED(device->CreatePixelShader(g_ps_fg_motion, sizeof(g_ps_fg_motion), nullptr, &gpu.ps_fg_motion)) &&
                 SUCCEEDED(device->CreatePixelShader(g_ps_fg_motion_keep, sizeof(g_ps_fg_motion_keep), nullptr, &gpu.ps_fg_motion_keep)) &&
                 SUCCEEDED(device->CreatePixelShader(g_ps_hud_motion, sizeof(g_ps_hud_motion), nullptr, &gpu.ps_hud_motion)) &&
@@ -944,13 +945,29 @@ namespace edaa
                 return false;
             }
 
-            // Copy back into the game's scene target (NGX keeps our pipeline state, XeSS runs on D3D12).
+            // Copy back into the game's scene target (NGX keeps our pipeline state, XeSS runs on D3D12),
+            // for DLAA sharpened when asked (DLSS keeps its own history: the sharpened copy is not fed back).
+            const bool sharpen = method == aa_method::dlaa && in.config.dlss_sharpness > 0;
+
+            if (sharpen) {
+                taa_constants tc = {};
+                fill_taa_constants(tc, in.config, in.render_w, in.render_h, 0, 0, false);
+                tc.sharpen[0] = std::min(in.config.dlss_sharpness, 1.0f);
+
+                if (!upload(ctx, gpu.taa_cb.Get(), tc)) {
+                    return false;
+                }
+
+                ID3D11Buffer* const cb[] = { gpu.taa_cb.Get() };
+                ctx->PSSetConstantBuffers(0, 1, cb);
+            }
+
             bind_fullscreen(ctx);
             set_viewport(ctx, static_cast<float>(in.render_w), static_cast<float>(in.render_h));
             ID3D11RenderTargetView* const scene_target[] = { gpu.color.rtv.Get() };
             ctx->OMSetRenderTargets(1, scene_target, nullptr);
             bind_srvs(ctx, { nullptr, gpu.upscaler_output.srv.Get() });
-            ctx->PSSetShader(gpu.ps_copy.Get(), nullptr, 0);
+            ctx->PSSetShader(sharpen ? gpu.ps_sharpen_hdr.Get() : gpu.ps_copy.Get(), nullptr, 0);
             ctx->Draw(3, 0);
             return true;
         }
