@@ -506,3 +506,21 @@ bloom (`cb2[1].w`) and multiplied by `cb2[6].y` before the tonemap curve.
 `dlss_exposure_mode` 2 copies the texture and `cb2` at the tonemap draw (GPU
 copies) and the next frame's resolve evaluates `cb2[2].x * E * cb2[6].y`
 (`ps_exposure`) into the 1x1 exposure texture of DLAA (`exposure.hpp`).
+
+Cross-check (12.11.): RenoDX's Elite module (github.com/clshortfuse/renodx,
+`src/games/elitedangerous/tonemap`, MIT) carries the same pixel shader
+decompiled (`tonemap_0xD7E646E3`, RenoDX's CRC32 hash); its exposure lines
+match the formula above term for term, including the clamp of the scene to
+`64500 cb2[2].x` before it. Two more variants exist there: "no bloom"
+(`0x6BE69EF3`, same `TEXCOORD1.z` luminance, so the same exposure) and "no
+bloom, no LUT" (`0xEBD83636`), which gets no luminance at all and multiplies
+by `cb2[7].x` instead: `cb2[2].x cb2[7].x cb2[6].y`. Mode 2 does not handle
+that variant (its vertex shader is another one); DLAA then keeps the fixed
+value. RenoDX replaces only the pixel shaders, so with it installed the
+vertex shader and `cb2` that mode 2 copies are unchanged.
+
+RenoDX also shows where Elite drops to 8 bit: the tonemap, its own AA
+(MLAA, FXAA, SMAA) and FSR1 write `R8G8B8A8` targets, which RenoDX replaces
+by `R16G16B16A16_FLOAT` clones when those shaders draw. EDAA's DLAA/TAA
+resolve runs before, on the HDR scene; only the upscaling paths that work on
+the tonemapped image see 8 bit.
