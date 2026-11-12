@@ -50,7 +50,7 @@ button.on { border-color: var(--accent); color: var(--accent); }
 .pair figure { margin: 0; }
 .pair figcaption { color: var(--dim); font-size: 13px; padding: 2px 0; }
 .pair img, .pair canvas { width: 100%; display: block; background: #000; }
-.burst img { image-rendering: pixelated; }
+.burst canvas { image-rendering: pixelated; }
 svg.chart { width: 100%; height: 180px; background: var(--panel); border-radius: 6px; }
 @media (max-width: 760px) { .pair { grid-template-columns: 1fr; } }
 </style>
@@ -144,7 +144,7 @@ function scene(rec, index) {
     <div class="controls"><button class="play on">Pause</button>
       <label>Tempo <select class="fps"><option value="60">Echtzeit (~60 fps)</option><option value="10" selected>langsam (10 fps)</option><option value="3">sehr langsam (3 fps)</option></select></label>
       <span class="dim frame-no"></span></div>
-    <div class="pair burst"><figure><figcaption class="ca"></figcaption><img class="ba"></figure><figure><figcaption class="cb"></figcaption><img class="bb"></figure></div>
+    <div class="pair burst"><figure><figcaption class="ca"></figcaption><canvas class="ba"></canvas></figure><figure><figcaption class="cb"></figcaption><canvas class="bb"></canvas></figure></div>
     <h3>Flackern je Pixel über die ganze Aufnahme</h3>
     <p class="dim">Schwarz = ruhig, rot → gelb → weiß = stärker (weiß ab 8 % Helligkeitsänderung je Bild).</p>
     <div class="pair"><figure><figcaption class="ha-c"></figcaption><img class="ha"></figure><figure><figcaption class="hb-c"></figcaption><img class="hb"></figure></div>
@@ -190,12 +190,31 @@ function scene(rec, index) {
     legend.innerHTML = legend.innerHTML.replace(/Höhe bis [^%]*%/, `Höhe bis ${(max * 100).toFixed(2)} %`);
   }
 
+  // Burst frames are loaded once and drawn from memory: no request per frame.
+  const cache = {};
+  function frames(id) {
+    if (!cache[id]) cache[id] = Array.from({ length: rec.burst.count }, (_, i) => {
+      const img = new Image();
+      img.src = `${rec.recording}/burst/${id}_${i}.png`;
+      return img;
+    });
+    return cache[id];
+  }
+
+  function draw(canvas, img) {
+    canvas.width = rec.burst.rect[2];
+    canvas.height = rec.burst.rect[3];
+    if (img.complete && img.naturalWidth > 0) canvas.getContext('2d').drawImage(img, 0, 0);
+  }
+
   function step() {
-    const a = q('select.a').value, b = q('select.b').value;
-    q('.ba').src = `${rec.recording}/burst/${a}_${frame}.png`;
-    q('.bb').src = `${rec.recording}/burst/${b}_${frame}.png`;
-    q('.frame-no').textContent = `Bild ${rec.burst.start + frame}`;
-    frame = (frame + 1) % rec.burst.count;
+    const fa = frames(q('select.a').value), fb = frames(q('select.b').value);
+    const missing = fa.concat(fb).filter(i => i.complete && i.naturalWidth === 0).length;
+    const loading = fa.concat(fb).filter(i => !i.complete).length;
+    draw(q('.ba'), fa[frame]);
+    draw(q('.bb'), fb[frame]);
+    q('.frame-no').textContent = missing ? `${missing} Bilder fehlen (Server läuft?)` : loading ? `lädt … ${loading}` : `Bild ${rec.burst.start + frame}`;
+    if (!loading) frame = (frame + 1) % rec.burst.count;
   }
 
   function restart() {
@@ -203,10 +222,9 @@ function scene(rec, index) {
     if (playing) timer = setInterval(step, 1000 / Number(q('.fps').value));
   }
 
-  // Preload the burst so playback does not stutter.
   function preload() {
-    for (const id of [q('select.a').value, q('select.b').value])
-      for (let i = 0; i < rec.burst.count; ++i) new Image().src = `${rec.recording}/burst/${id}_${i}.png`;
+    frames(q('select.a').value);
+    frames(q('select.b').value);
   }
 
   split.addEventListener('mousemove', e => {
@@ -234,7 +252,7 @@ function scene(rec, index) {
     restart();
   });
   // Larger burst images: 2x, pixelated.
-  for (const img of el.querySelectorAll('.burst img')) img.style.maxWidth = `${rec.burst.rect[2] * 2}px`;
+  for (const img of el.querySelectorAll('.burst canvas')) img.style.maxWidth = `${rec.burst.rect[2] * 2}px`;
   update(); preload(); step(); restart();
 }
 
