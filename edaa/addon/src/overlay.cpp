@@ -347,6 +347,11 @@ namespace edaa
                 }
 
                 edit(ImGui::Checkbox("Soft screen edges (reuse edge history)", &s.config.taa_soft_offscreen));
+                edit(ImGui::Checkbox("Sharper TAA", &s.config.taa_sharp));
+
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Samples close to the pixel centre count more, the history is sharpened by what\nresampling blurs, and the result is sharpened a little. Sharper, slightly more flicker.");
+                }
                 edit(ImGui::SliderFloat("HDR compression scale (higher = bright edges flicker less)", &s.config.taa_hdr_scale, 0.01f, 1000.0f, "%.2f", ImGuiSliderFlags_Logarithmic));
             }
 

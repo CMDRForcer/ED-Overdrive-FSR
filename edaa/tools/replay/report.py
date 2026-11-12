@@ -3,7 +3,8 @@
     python report.py <replay folder>
 
 Reads <replay folder>/<recording>/metrics.json (written by edaa-replay) and
-an optional <replay folder>/scenes.json ({"<recording>": "description"}) and
+optional <replay folder>/scenes.json ({"<recording>": "description"}) and
+labels.json ({"<variant id>": "label"}, for --taa experiments), and
 writes <replay folder>/index.html: a table of the measures over all
 recordings, and per recording a split comparison of two variants (whole
 frames, zoom), a burst of consecutive frames played side by side, the
@@ -270,6 +271,12 @@ def main(folder):
     if os.path.exists(names_path):
         scenes = json.load(open(names_path, encoding='utf-8'))
 
+    # Optional readable names for --taa experiments: {"<variant id>": "label"}.
+    labels = {}
+    labels_path = os.path.join(folder, 'labels.json')
+    if os.path.exists(labels_path):
+        labels = json.load(open(labels_path, encoding='utf-8'))
+
     data = []
     for name in sorted(os.listdir(folder)):
         path = os.path.join(folder, name, 'metrics.json')
@@ -278,7 +285,7 @@ def main(folder):
         rec = json.load(open(path, encoding='utf-8'))
         rec['title'] = html.escape(scenes.get(name, name))
         for v in rec['variants']:
-            v['label'] = html.escape(v['label'])
+            v['label'] = html.escape(labels.get(v['id'], v['label']))
         data.append(rec)
 
     if not data:

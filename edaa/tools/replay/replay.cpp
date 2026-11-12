@@ -280,14 +280,58 @@ namespace
 
     struct run_def
     {
-        const char* id;
-        const char* label;
+        std::string id;
+        std::string label;
         kind type;
         int preset = 0; // NVSDK_NGX_DLSS_Hint_Render_Preset, 0 = NVIDIA's default
         int exposure_mode = 1; // 0 DLSS, 1 fixed, 2 from Elite (dlss_exposure_mode)
         float exposure = 10.0f;
         std::vector<float> sharpen = { 0.0f }; // one variant per value (DLAA only)
+        std::string taa; // TAA only: setting overrides "key=value;..." (taa_override), from --taa
     };
+
+    // Experiment values that are not add-on settings (yet).
+    struct taa_extra
+    {
+        float sharpen = 0; // sh: output sharpening with ps_sharpen_hdr (not fed back)
+        float jitter_weight = 0; // jw: ps_taa jitter weighting strength (hdr.y)
+        float history_sharpen = 0; // hs: ps_taa history sharpening (hdr.z)
+    };
+
+    // TAA settings an experiment can change (--taa id=key=value;key=value).
+    bool taa_override(edaa::settings& c, taa_extra& x, const std::string& spec)
+    {
+        std::stringstream in(spec);
+        std::string item;
+
+        while (std::getline(in, item, ';')) {
+            const size_t eq = item.find('=');
+
+            if (eq == std::string::npos) {
+                return false;
+            }
+
+            const std::string key = item.substr(0, eq);
+            const float v = std::stof(item.substr(eq + 1));
+
+            if (key == "hw") c.taa_history_weight = v;
+            else if (key == "hwm") c.taa_history_weight_motion = v;
+            else if (key == "hwmin") c.taa_history_weight_min = v;
+            else if (key == "cg") c.taa_clip_gamma = v;
+            else if (key == "cgs") c.taa_clip_gamma_static = v;
+            else if (key == "af") c.taa_anti_flicker = v != 0;
+            else if (key == "rec") c.taa_reconstruction = v != 0;
+            else if (key == "unj") c.taa_unjitter = v != 0;
+            else if (key == "soft") c.taa_soft_offscreen = v != 0;
+            else if (key == "hdr") c.taa_hdr_scale = v;
+            else if (key == "sh") x.sharpen = v;
+            else if (key == "jw") x.jitter_weight = v;
+            else if (key == "hs") x.history_sharpen = v;
+            else return false;
+        }
+
+        return true;
+    }
 
     const std::vector<run_def>& all_runs()
     {
@@ -643,10 +687,13 @@ namespace
         g.ctx->OMSetRenderTargets(0, nullptr, nullptr);
     }
 
-    taa_constants constants(const recording& rec, uint32_t t, bool reset, float sharpen)
+    taa_constants constants(const recording& rec, uint32_t t, bool reset, float sharpen, const std::string& overrides = {})
     {
-        const edaa::settings config; // the add-on's TAA defaults
+        edaa::settings config; // the add-on's TAA defaults
         const auto& p = rec.params[t];
+        taa_extra x;
+        const bool hdr_set = overrides.find("hdr=") != std::string::npos;
+        taa_override(config, x, overrides);
         taa_constants tc = {};
         tc.render_size[0] = static_cast<float>(rec.w);
         tc.render_size[1] = static_cast<float>(rec.h);
@@ -664,8 +711,14 @@ namespace
         tc.flicker[1] = config.taa_history_weight_min;
         tc.flicker[2] = config.taa_clip_gamma_static;
         tc.flicker[3] = config.taa_soft_offscreen ? 1.0f : 0.0f;
-        tc.hdr[0] = p.taa_hdr_scale > 0 ? p.taa_hdr_scale : config.taa_hdr_scale;
+        tc.hdr[0] = p.taa_hdr_scale > 0 && !hdr_set ? p.taa_hdr_scale : config.taa_hdr_scale;
         tc.sharpen[0] = sharpen;
+        // Jitter weighting: normalised by the mean of exp(-k d^2) over the jitter square.
+        const double k = x.jitter_weight;
+        const double axis = k > 0 ? std::sqrt(3.14159265358979 / k) * std::erf(std::sqrt(k) / 2) : 1.0;
+        tc.hdr[1] = x.jitter_weight;
+        tc.hdr[2] = x.history_sharpen;
+        tc.hdr[3] = static_cast<float>(1.0 / (axis * axis));
         return tc;
     }
 
@@ -724,7 +777,14 @@ namespace
             out.push_back(std::move(v));
         }
 
-        std::printf("  %-12s", run.id);
+        std::printf("  %-12s", run.id.c_str());
+        edaa::settings check;
+        taa_extra extra;
+
+        if (!taa_override(check, extra, run.taa)) {
+            std::printf("bad --taa settings: %s\n", run.taa.c_str());
+            return false;
+        }
         const auto started = std::chrono::steady_clock::now();
         int history = 0;
         uint32_t since_reset = 0;
@@ -744,7 +804,7 @@ namespace
             g.ctx->End(g.ts[0].Get());
 
             if (run.type == kind::taa) {
-                const taa_constants tc = constants(rec, t, reset, 0);
+                const taa_constants tc = constants(rec, t, reset, 0, run.taa);
                 g.ctx->UpdateSubresource(g.cb.Get(), 0, nullptr, &tc, 0, 0);
                 fullscreen(g, g.ps_taa.Get(), g.history[1 - history].rtv.Get(),
                     { g.color.srv.Get(), g.history[history].srv.Get(), g.motion.srv.Get(), g.depth.srv.Get() }, rec.w, rec.h);
@@ -791,7 +851,10 @@ namespace
                 }
 
                 if (run.type == kind::taa) {
-                    fullscreen(g, g.ps_copy.Get(), g.final_out.rtv.Get(), { nullptr, g.history[history].srv.Get() }, rec.w, rec.h);
+                    const taa_constants tc = constants(rec, t, false, std::min(extra.sharpen, 1.0f), run.taa);
+                    g.ctx->UpdateSubresource(g.cb.Get(), 0, nullptr, &tc, 0, 0);
+                    fullscreen(g, extra.sharpen > 0 ? g.ps_sharpen.Get() : g.ps_copy.Get(), g.final_out.rtv.Get(),
+                        { nullptr, g.history[history].srv.Get() }, rec.w, rec.h);
                 }
                 else {
                     const float s = run.sharpen[k];
@@ -882,7 +945,7 @@ int wmain(int argc, wchar_t** argv)
         std::printf("edaa-replay <recording folder> <output folder> [run,run,...]\nruns:");
 
         for (const run_def& r : all_runs()) {
-            std::printf(" %s", r.id);
+            std::printf(" %s", r.id.c_str());
         }
 
         std::printf("\n");
@@ -890,6 +953,37 @@ int wmain(int argc, wchar_t** argv)
     }
 
     std::vector<std::string> wanted;
+    std::vector<run_def> runs = all_runs();
+    auto ascii = [](const wchar_t* w) {
+        std::string out;
+
+        for (; *w; ++w) {
+            out += static_cast<char>(*w); // ids and settings are ASCII
+        }
+
+        return out;
+    };
+
+    // TAA experiments: --taa <id>=<key=value;...>, run in addition to the list
+    // ("-" as the list: only the experiments).
+    for (int i = 4; i < argc; i += 2) {
+        if (std::wstring(argv[i]) != L"--taa" || i + 1 >= argc) {
+            std::printf("unknown argument (--taa id=key=value;...)\n");
+            return 2;
+        }
+
+        const std::string spec = ascii(argv[i + 1]);
+        const size_t eq = spec.find('=');
+
+        if (eq == std::string::npos) {
+            std::printf("--taa id=key=value;...\n");
+            return 2;
+        }
+
+        run_def r{ spec.substr(0, eq), "TAA " + spec.substr(eq + 1), kind::taa };
+        r.taa = spec.substr(eq + 1);
+        runs.push_back(r);
+    }
 
     if (argc > 3) {
         std::wstring list = argv[3];
@@ -951,8 +1045,8 @@ int wmain(int argc, wchar_t** argv)
 
     std::vector<variant> variants;
 
-    for (const run_def& run : all_runs()) {
-        if (!wanted.empty() && std::find(wanted.begin(), wanted.end(), run.id) == wanted.end()) {
+    for (const run_def& run : runs) {
+        if (!wanted.empty() && run.taa.empty() && std::find(wanted.begin(), wanted.end(), run.id) == wanted.end()) {
             continue;
         }
 

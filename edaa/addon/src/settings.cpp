@@ -39,6 +39,7 @@ namespace edaa
             EDAA_FIELD(taa_anti_flicker, boolean),
             EDAA_FIELD(taa_history_weight_min, real),
             EDAA_FIELD(taa_soft_offscreen, boolean),
+            EDAA_FIELD(taa_sharp, boolean),
             EDAA_FIELD(taa_hdr_scale, real),
             EDAA_FIELD(taa_before_hud, boolean),
             EDAA_FIELD(hud_learn, boolean),

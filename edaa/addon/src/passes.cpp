@@ -750,6 +750,16 @@ namespace edaa
             tc.flicker[2] = config.taa_clip_gamma_static;
             tc.flicker[3] = config.taa_soft_offscreen ? 1.0f : 0.0f;
             tc.hdr[0] = config.taa_hdr_scale;
+
+            // Sharper TAA (ps_taa): jitter weighting strength, history sharpening,
+            // and the normaliser 1 / mean of exp(-k d^2) over the jitter square.
+            if (config.taa_sharp) {
+                constexpr double k = 8.0;
+                const double axis = std::sqrt(3.14159265358979 / k) * std::erf(std::sqrt(k) / 2);
+                tc.hdr[1] = static_cast<float>(k);
+                tc.hdr[2] = 1.0f;
+                tc.hdr[3] = static_cast<float>(1.0 / (axis * axis));
+            }
         }
 
 
@@ -1332,6 +1342,7 @@ namespace edaa
             std::optional<gpu_profiler::scope> taa_timed(std::in_place, ctx, gpu_profiler::taa);
             taa_constants tc = {};
             fill_taa_constants(tc, in.config, in.render_w, in.render_h, in.jitter_x, in.jitter_y, !gpu.history_valid || in.camera_cut);
+            tc.sharpen[0] = in.config.taa_sharp ? 0.6f : 0.0f; // copy-back below (not fed into the history)
 
             if (!upload(ctx, gpu.taa_cb.Get(), tc)) {
                 return "cannot update constants";
@@ -1348,12 +1359,12 @@ namespace edaa
             ctx->PSSetShader(gpu.ps_taa.Get(), nullptr, 0);
             ctx->Draw(3, 0);
 
-            // 3. Copy back into the game's scene target.
+            // 3. Copy back into the game's scene target (sharpened with Sharper TAA).
             bind_srvs(ctx, {});
             ID3D11RenderTargetView* const scene_target[] = { gpu.color.rtv.Get() };
             ctx->OMSetRenderTargets(1, scene_target, nullptr);
             bind_srvs(ctx, { nullptr, next.srv.Get() });
-            ctx->PSSetShader(gpu.ps_copy.Get(), nullptr, 0);
+            ctx->PSSetShader(in.config.taa_sharp ? gpu.ps_sharpen_hdr.Get() : gpu.ps_copy.Get(), nullptr, 0);
             ctx->Draw(3, 0);
 
             gpu.history_index = 1 - gpu.history_index;

@@ -10,7 +10,9 @@ cbuffer taa_constants : register(b0)
     float4 jitter; // xy: current jitter in UV, z: unjitter current sample (0/1), w: reconstruction filter (0/1)
     float4 blend; // x: history weight, y: history weight at high motion, z: reset (1 = no history), w: variance clip gamma
     float4 flicker; // x: anti-flicker on, y: minimum history weight, z: clip gamma for static pixels, w: soft off-screen on
-    float4 hdr; // x: scale applied before the HDR compression (the scene is not exposed yet)
+    float4 hdr; // x: scale applied before the HDR compression (the scene is not exposed yet),
+                // y: jitter weighting strength (0 = off), z: history sharpening (0 = off),
+                // w: jitter weighting normaliser (1 / mean weight over the jitter square)
     float4 display_size; // upscaling (ps_taau): w, h, 1/w, 1/h of the output
     float4 sharpen; // upscaling (ps_sharpen): x: sharpness 0..1
 };
@@ -185,7 +187,24 @@ float4 ps_taa(float4 pos : SV_Position) : SV_Target
     float rejection = 1; // for the debug view: 0 = history fully kept, 1 = discarded
 
     if (history_weight > 0) {
-        const float3 raw = rgb_to_ycocg(tonemap(sample_history(history_uv, render_size)));
+        float3 sampled = tonemap(sample_history(history_uv, render_size));
+
+        // History sharpening: resampling the history at a fraction of a pixel
+        // blurs it a little every frame, which adds up while the camera turns.
+        // Undo that blur (largest at half a pixel, none on still pixels) with
+        // a small unsharp mask; the clip box below still bounds the result.
+        if (hdr.z > 0) {
+            const float2 f = frac(history_uv * render_size.xy - 0.5);
+            const float blur = 2 * (f.x * (1 - f.x) + f.y * (1 - f.y)); // 0 on texel centres, 1 at half a texel
+            const float2 d = render_size.zw;
+            const float3 around = 0.25 * (tonemap(history_tex.SampleLevel(linear_clamp, history_uv + float2(d.x, 0), 0).rgb) +
+                tonemap(history_tex.SampleLevel(linear_clamp, history_uv - float2(d.x, 0), 0).rgb) +
+                tonemap(history_tex.SampleLevel(linear_clamp, history_uv + float2(0, d.y), 0).rgb) +
+                tonemap(history_tex.SampleLevel(linear_clamp, history_uv - float2(0, d.y), 0).rgb));
+            sampled = saturate(sampled + hdr.z * blur * (sampled - around));
+        }
+
+        const float3 raw = rgb_to_ycocg(sampled);
         history = clip_aabb(raw, clip_min, clip_max);
         rejection = saturate(length(raw - history) * 8);
 
@@ -196,6 +215,16 @@ float4 ps_taa(float4 pos : SV_Position) : SV_Target
             const float agreement = 1 - saturate(diff);
             history_weight = lerp(min(flicker.y, history_weight), history_weight, agreement * agreement);
         }
+    }
+
+    // Jitter weighting: this frame's sample lies |jitter| pixels from the pixel
+    // centre. A sample close to the centre adds more to the history, a far one
+    // less (normalised so the average stays the same): the accumulated image
+    // then holds less of the jitter footprint, which is what makes it soft.
+    if (hdr.y > 0 && history_weight > 0 && history_weight < 1) {
+        const float2 jitter_px2 = jitter.xy * render_size.xy;
+        const float w = exp(-hdr.y * dot(jitter_px2, jitter_px2)) * hdr.w;
+        history_weight = 1 - saturate((1 - history_weight) * w);
     }
 
     // Luminance-weighted blend (values are already compressed, so 1 - luma weighting).
