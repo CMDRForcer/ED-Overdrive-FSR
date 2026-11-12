@@ -35,6 +35,16 @@ Each run uses the add-on's own code: the shaders of `taa.hlsl` and
 whole render size to the crop. The result is written into an R11G11B10
 target like the game's scene, then read back.
 
+TAA experiments run with changed settings, in addition to the list ("-"
+alone: only the experiments):
+
+    edaa-replay <rec> <out> raw,taa,dlaa --taa sharp=jw=8;hs=1;sh=0.6 --taa soft=hw=0.97
+
+Keys: `hw`, `hwm`, `hwmin`, `cg`, `cgs`, `af`, `rec`, `unj`, `soft`, `hdr`
+(the `taa_*` settings), `jw` (jitter weighting strength), `hs` (history
+sharpening), `sh` (output sharpening). An optional `labels.json`
+(`{"sharp": "Sharper TAA"}`) names them on the page.
+
 An optional `scenes.json` in the output folder names the recordings on the
 page: `{"20261112-132417": "Foreign ship flying by"}`.
 
