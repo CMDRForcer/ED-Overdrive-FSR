@@ -170,6 +170,38 @@ namespace edaa::recorder
         }
 
 
+        DWORD WINAPI beep_thread(LPVOID param)
+        {
+            Beep(static_cast<DWORD>(reinterpret_cast<uintptr_t>(param)), 150);
+            HMODULE self = nullptr;
+            GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                reinterpret_cast<LPCWSTR>(&beep_thread), &self);
+            FreeLibraryAndExitThread(self, 0);
+        }
+
+
+        // Audible tone (MessageBeep stays silent with the Windows sound scheme
+        // off): Beep() blocks for its length, so it runs on its own thread, which
+        // holds a reference on the add-on until it is done.
+        void beep(DWORD frequency)
+        {
+            HMODULE self = nullptr;
+
+            if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, reinterpret_cast<LPCWSTR>(&beep_thread), &self)) {
+                return;
+            }
+
+            HANDLE thread = CreateThread(nullptr, 0, beep_thread, reinterpret_cast<LPVOID>(static_cast<uintptr_t>(frequency)), 0, nullptr);
+
+            if (thread != nullptr) {
+                CloseHandle(thread);
+            }
+            else {
+                FreeLibrary(self);
+            }
+        }
+
+
         // Copies one mapped slot into a recorded frame (worker thread).
         std::unique_ptr<recorded_frame> take(slot& sl)
         {
@@ -352,7 +384,7 @@ namespace edaa::recorder
                         worker_running = false;
                     }
                     log(ok ? "saved " + narrow(folder) : "not saved: " + error);
-                    MessageBeep(MB_OK);
+                    Beep(ok ? 660 : 220, ok ? 150 : 600); // this thread, before it lets the add-on go
                     phase.store(phase_t::idle);
                     FreeLibraryAndExitThread(static_cast<HMODULE>(module), 0);
                 }
@@ -584,7 +616,7 @@ namespace edaa::recorder
                     started = now();
                     ring.gap = false;
                     phase.store(phase_t::recording);
-                    MessageBeep(MB_OK);
+                    beep(990);
                     log("started");
                 }
                 else {

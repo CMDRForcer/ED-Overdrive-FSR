@@ -616,6 +616,7 @@ namespace edaa
             float vehicle[12] = {}; // vehicle_motion()
             bool vehicle_known = false;
             bool camera_cut = false;
+            bool on_foot = false; // first-person body drawn (recorder flag)
             bool upscaling = false; // motion vectors only: the upscaler runs at the end of the frame
             settings config;
         };
@@ -1246,7 +1247,8 @@ namespace edaa
                     rs.tonemap_offset = static_cast<uint32_t>(gpu.tonemap_offset);
                     rs.tonemap_age = static_cast<uint32_t>(gpu.exposure_age);
 
-                    rp.flags = (in.camera_cut ? recorder::flag_camera_cut : 0) | (in.vehicle_known ? recorder::flag_vehicle_known : 0);
+                    rp.flags = (in.camera_cut ? recorder::flag_camera_cut : 0) | (in.vehicle_known ? recorder::flag_vehicle_known : 0) |
+                        (in.on_foot ? recorder::flag_on_foot : 0);
                     rp.render_w = in.render_w;
                     rp.render_h = in.render_h;
                     rp.jitter[0] = in.jitter_x;
@@ -1635,6 +1637,7 @@ namespace edaa
             in.scene_depth = s.scene_depth;
             in.scene_color = s.scene_color;
             in.config = s.config;
+            in.on_foot = s.on_foot;
 
             if (s.on_foot && s.config.mask_auto_off_on_foot && s.config.mask_source == 1) {
                 in.config.mask_distance = 0.0f; // no vehicle: everything uses camera motion

@@ -8,7 +8,8 @@ side with numbers instead of one more flight each.
 ## Recording
 
 `Ctrl+Shift+R` (or "Start recording" in the developer section of the overlay)
-starts and stops; a beep marks the start and the end of the writing. Status:
+starts and stops; a high tone marks the start, a lower one the end of the
+writing (a long low tone: not saved, see the status line). Status:
 the line next to the button ("REC 2.1 s, 126 frames, 2.4 GB of 4.0").
 
 * What: per frame, at the resolve (`passes.cpp`, after the motion vectors and

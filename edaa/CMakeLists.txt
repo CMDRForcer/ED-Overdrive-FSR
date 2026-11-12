@@ -133,6 +133,33 @@ else()
 	target_compile_definitions(edaa PRIVATE EDAA_DLSS=0)
 	message(STATUS "Building without DLSS (EDAA_WITH_DLSS off or SDK not in third_party/dlss)")
 endif()
+
+# Offline replay of recordings (tools/replay, docs/replay.md): developer tool,
+# needs the DLSS SDK. Plays the recorded inputs through the EDAA TAA shaders
+# and dlss.cpp and measures the results.
+option(EDAA_BUILD_REPLAY "Build the edaa-replay developer tool" OFF)
+if(EDAA_BUILD_REPLAY AND DLSS_LIB)
+	add_executable(edaa-replay
+		tools/replay/replay.cpp
+		tools/replay/reshade_shim.cpp
+		addon/src/dlss.cpp
+		${SHADER_HEADER}
+		${TAA_HEADER}
+	)
+	target_include_directories(edaa-replay SYSTEM PRIVATE ${RESHADE_INCLUDE} ${IMGUI_INCLUDE} ${DLSS_DIR}/include)
+	target_include_directories(edaa-replay PRIVATE ${SHADER_OUT} ${CMAKE_SOURCE_DIR}/addon/src)
+	target_compile_features(edaa-replay PRIVATE cxx_std_20)
+	# RESHADE_API_LIBRARY: reshade::log goes to ReShadeLogMessage (reshade_shim.cpp).
+	target_compile_definitions(edaa-replay PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX RESHADE_API_LIBRARY EDAA_DLSS=1 EDAA_VENDOR_AMD=0 EDAA_DEVELOPER=1)
+	target_link_libraries(edaa-replay PRIVATE d3d11 windowscodecs ole32 $<IF:$<CONFIG:Debug>,${DLSS_LIB}/nvsdk_ngx_s_dbg.lib,${DLSS_LIB}/nvsdk_ngx_s.lib>)
+	target_link_options(edaa-replay PRIVATE /ignore:4217)
+	# Static runtime like the add-on: the NGX static library is built with /MT.
+	set_property(TARGET edaa-replay PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+	add_custom_command(TARGET edaa-replay POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different ${DLSS_DIR}/lib/Windows_x86_64/rel/nvngx_dlss.dll $<TARGET_FILE_DIR:edaa-replay>)
+elseif(EDAA_BUILD_REPLAY)
+	message(STATUS "edaa-replay needs the DLSS SDK (third_party/dlss): not built")
+endif()
 # Intel XeSS (Native AA through a D3D12 bridge): built in when the SDK submodule
 # third_party/xess is checked out. libxess.dll is delay-loaded, so the add-on
 # still loads without it (or on systems where it cannot load).
